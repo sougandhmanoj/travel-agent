@@ -1,0 +1,18 @@
+{
+  "name": "south-india-travel-guide",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "backend:check": "cd backend && .venv/bin/ruff check . && .venv/bin/mypy app tests && .venv/bin/pytest",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build",
+    "frontend:check": "npm --prefix frontend run lint && npm --prefix frontend run typecheck && npm --prefix frontend run build",
+    "data:seed": "node scripts/generate_supabase_seed.mjs",
+    "db:start": "npx supabase start",
+    "db:stop": "npx supabase stop",
+    "db:reset": "npx supabase db reset",
+    "db:test": "npx supabase test db",
+    "db:lint": "npx supabase db lint --level warning",
+    "db:verify": "npm run db:reset && npm run db:test && npm run db:lint"
+  }
+}

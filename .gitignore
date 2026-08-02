@@ -30,6 +30,16 @@ outputs/**/*.inspect.ndjson
 outputs/**/backups/
 outputs/**/.*.xlsx
 
+# One-off data research and workbook-building artifacts
+# Keep the verified .xlsx workbooks tracked; hide only supporting material.
+outputs/south_india_hubs_workbook/*.json
+outputs/south_india_hubs_workbook/*.md
+outputs/south_india_hubs_workbook/*.pdf
+outputs/south_india_hubs_workbook/*.txt
+outputs/south_india_hubs_workbook/research_sources/
+outputs/south_india_travel_guide_planning_prompt.md
+tools/
+
 # Logs
 *.log
 npm-debug.log*

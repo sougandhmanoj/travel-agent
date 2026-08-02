@@ -1,7 +1,9 @@
 # South India Travel Guide — Product and Journey-Planning Specification
 
-**Status:** Product source of truth  
-**Version:** 1.0  
+**Status:** Product source of truth
+
+**Version:** 1.1
+
 **Agreed:** 2 August 2026
 
 ## How to use this document
@@ -16,7 +18,9 @@ User testing may change these decisions. Record agreed changes here so later mil
 
 Given only **From**, **To**, and **Date**, explain the practical end-to-end ways to complete a journey so that a traveller who does not know the route understands exactly how to travel.
 
-The product must handle the ambiguity that occurs when there is no convenient direct service. It should identify sensible interchange locations and explain trains, flights, metros, buses, road legs, walking, station changes, transfer time, waiting time, and final arrival as one connected journey.
+The product must handle the ambiguity that occurs when there is no convenient direct service. For the MVP, it should identify sensible journey patterns and explain the likely trains, flights, metros, buses, road legs, walking, interchange locations, station changes, and final arrival as one connected journey.
+
+The MVP is an educational planning guide, not an operational control system. It must not claim to know exact halts, actual waiting times, delays, cancellations, platform changes, or whether a connection will work on the day. Those depend on schedules and real-world conditions that can change. Exact date-aware connection planning is a later product capability.
 
 The product educates first and recommends second. Its success is measured by whether the user understands the available journey choices and the actions required to complete them.
 
@@ -36,9 +40,9 @@ Accessibility, luggage, family, elderly-traveller, overnight-avoidance, and othe
 - Cities/localities and supported airports, railway stations, bus terminals, and metro stations
 - Complete multimodal journey chains
 - Road, Rail, Flight, Metro, Bus, Auto/Cab, and Walking legs where useful
-- Periodically refreshed general planning and published schedule information
+- General planning estimates and practical route patterns
 - Practical alternatives and one clearly Recommended journey
-- Explanation of transfers, waits, station changes, difficulty, assumptions, sources, and verification needs
+- Explanation of likely transfers, station changes, difficulty, assumptions, sources, and what the traveller must verify
 
 ### Excluded for now
 
@@ -46,6 +50,7 @@ Accessibility, luggage, family, elderly-traveller, overnight-avoidance, and othe
 - Return/multi-city journey planning
 - Booking, payments, accounts, or live tracking
 - Affiliate links; these may be introduced later as a business feature
+- Exact halt, layover, or date-specific connection calculation
 - Live train/flight cancellation and delay response
 - Live seat or fare availability
 - Traveller-specific preference questionnaires
@@ -61,7 +66,7 @@ The MVP asks for only:
 
 Users may select a supported city/locality, metro station, railway station, airport, or bus terminal. Most searches are expected to be city-to-city.
 
-The selected date represents an all-day travel window. The engine may select any practical departure that day. It should not assume that the earliest departure is best when a later service produces a safer, simpler, or faster complete journey.
+The selected date is retained as journey context and for future schedule-aware functionality. In the MVP, it does not guarantee that a particular service operates or that a connection is available on that date. The result must tell the user to verify services, timings, and connections before booking or departure.
 
 ## Journey model
 
@@ -83,8 +88,8 @@ Recommendation and scoring apply to the whole itinerary, including access, waiti
 - **Transfer:** The traveller leaves one service and boards another.
 - **Mode change:** The traveller changes transport type, such as Train to Metro.
 - **Station change:** The traveller must travel from one station or terminal to another before boarding the next service.
-- **Wait:** Time between the traveller being ready for the next service and its scheduled departure.
-- **Buffer:** Additional time deliberately reserved to make a connection practical.
+- **Indicative wait:** A broad planning expectation when supported by published information; it is not a prediction of the actual wait.
+- **Suggested buffer:** General guidance about how much connection time a traveller should allow; it is not a guarantee that a connection will work.
 
 Only actions required from the traveller count toward transfer difficulty. A direct train with many intermediate stops still has zero transfers.
 
@@ -114,7 +119,7 @@ There is rarely one universally best hub for a city. Hub choice must consider co
 
 ## Candidate generation strategy
 
-The engine must search for practical complete journeys, including useful interchange cities when no direct service exists.
+The engine must search for practical journey patterns, including useful interchange cities when no direct service exists. It should educate the user about the sequence of places and modes without pretending to calculate exact day-of-travel operations.
 
 Candidate generation should progressively relax convenience requirements:
 
@@ -132,10 +137,8 @@ Traveller ease guides ranking; it is not an overly strict filter. Do not hide a 
 
 Remove a candidate only when it is not defensible, including when:
 
-- a required service does not operate on the selected date;
 - a connection is physically impossible;
-- transfer time is dangerously insufficient;
-- required route or schedule information is too incomplete to establish feasibility;
+- required route information is too incomplete to establish that the pattern is possible;
 - an endpoint is unsupported;
 - another safety or feasibility hard gate fails.
 
@@ -148,21 +151,22 @@ Mode changes, station changes, multiple transfers, long waits, and overnight wai
 - **Difficult:** Multiple transfers, station changes, long waits, or overnight connections
 - **Unverified possibility:** A potential chain exists, but an important leg or connection must be verified
 
-A difficult journey may still be Recommended when it is the best feasible choice. An unverified possibility can be displayed but must not be presented as fully trustworthy.
+A difficult journey may still be Recommended when it is the best supported pattern. An unverified possibility can be displayed but must not be presented as fully trustworthy.
 
 ## Mode-specific rules
 
 ### Rail-led journeys
 
-- Use periodically refreshed published schedules.
-- Respect operating days for the selected date.
+- Use published route and service information where it is legally and practically available.
+- Do not claim date-specific availability unless a trustworthy date-aware source confirms it.
 - Prefer direct trains strongly.
 - Treat one transfer as normal.
 - Allow two transfers when they create a useful journey.
 - Show three or more only when necessary.
 - Search important interchange locations when no direct train exists.
-- Allow same-city station changes only when the local transfer is practical and sufficiently documented.
-- Label schedule information with its source, freshness, and verification requirement.
+- Allow same-city station changes when the local transfer appears practical and is sufficiently documented.
+- Label service information with its source, freshness, and verification requirement.
+- Do not calculate or promise exact halts, layovers, or successful connections in the MVP.
 - When no practical Rail journey exists, initially display “No Rail options available.” This can be revisited after UI testing.
 
 ### Road-led journeys
@@ -189,8 +193,7 @@ A station change is considered practical only when:
 
 - the stations are no more than 10 km apart, unless they are officially associated parts of the journey;
 - at least one documented local transport option exists;
-- travel time and a safety margin are included;
-- the connection provides sufficient total time;
+- indicative transfer difficulty can be explained;
 - both stations and the local mode are clearly named;
 - important transfer information is sufficiently verified.
 
@@ -203,9 +206,9 @@ The planner may still show a difficult or partially unverified transfer when it 
 - More than 1 km: prefer Metro, Bus, Auto, or Cab
 - Never assume a long walk between stations simply because they are in the same city
 
-## Connection and waiting rules
+## Connection and waiting guidance
 
-Initial configurable connection buffers are:
+The MVP does not calculate exact halts or guarantee connections. When schedule-aware planning is added later, these initial configurable safety guidelines can be evaluated:
 
 | Connection | Starting rule |
 | --- | --- |
@@ -218,9 +221,9 @@ Initial configurable connection buffers are:
 | Metro connection | 15–20 minutes |
 | Cab/Auto | Distance- and traffic-sensitive buffer |
 
-These are configurable planning rules, not guarantees or permanent universal constants. Replace the Milestone 2 blanket 35% duration contingency with leg- and connection-specific uncertainty.
+These are future configurable planning guidelines, not current guarantees or permanent universal constants. The Milestone 2 blanket 35% duration contingency must not be presented as a verified connection calculation.
 
-Wait-time interpretation:
+When a published wait is available, the interface may describe it using these broad categories:
 
 | Wait | Treatment |
 | --- | --- |
@@ -229,7 +232,7 @@ Wait-time interpretation:
 | 90 minutes–3 hours | Inconvenient but usable |
 | Over 3 hours | Show when it enables a useful journey or no better option exists |
 
-Overnight waits are allowed. Clearly show the arrival time, next departure, total wait, interchange location, and a warning that the traveller should assess accommodation and personal safety.
+Potential overnight waits are allowed. Clearly identify the interchange and warn that an overnight wait may occur. Exact arrival, departure, and total wait should appear only when sourced schedule data supports them, and the traveller must still verify them.
 
 ## Recommendation logic
 
@@ -263,7 +266,7 @@ Safety and feasibility are hard gates. A candidate that fails either receives no
 
 Scores must come from measurable journey properties, not arbitrary mode-level values.
 
-Reliability initially means structural reliability because the MVP does not use live punctuality data. It considers connection margins, number of independent services, station changes, long/overnight waits, and completeness/freshness of source data. Do not claim historical punctuality without evidence.
+Reliability initially means structural confidence because the MVP does not use live punctuality or exact connection calculations. It considers the number of independent services, transfers, station changes, possible long/overnight waits, and completeness/freshness of source data. Do not claim historical punctuality or connection success without evidence.
 
 Simplicity considers transfers, mode changes, station changes, walking, interchange difficulty, and the clarity of the required actions.
 
@@ -271,7 +274,7 @@ Simplicity considers transfers, mode changes, station changes, walking, intercha
 
 Every displayed candidate must explain its position. For example:
 
-> Recommended because it has one transfer, a safe 55-minute connection, no station change, and is only 35 minutes slower than the fastest option.
+> Recommended because it uses one clearly explained transfer, avoids a station change, and has a similar estimated travel-time range to the more complicated alternatives.
 
 For the MVP, use only the visible label **Recommended**. Additional badges such as Fastest, Simplest, or Lowest Cost may be evaluated later.
 
@@ -296,9 +299,9 @@ Each card expands into a step-by-step timeline showing:
 
 - leg origin and destination;
 - mode and service/train number when available;
-- departure and arrival information;
+- departure and arrival information when supported by a trustworthy source;
 - in-vehicle duration;
-- wait and buffer duration;
+- indicative wait or suggested buffer when available, clearly labelled;
 - transfers, mode changes, and station changes;
 - local transfer instructions;
 - cost per leg;
@@ -317,7 +320,7 @@ Each card expands into a step-by-step timeline showing:
 
 ## Data quality and trust
 
-- Use published schedules refreshed periodically; live cancellations and delays are later work.
+- Use verified infrastructure, route, and service information; exact schedule-aware planning, live cancellations, and delays are later work.
 - Show source and last-checked information.
 - Warn when information exceeds its freshness threshold.
 - Exclude critically stale data from recommendation scoring.
@@ -333,15 +336,15 @@ Before public MVP use, manually review at least:
 
 - 20 city-to-city pilot journeys;
 - coverage across all four supported states;
-- direct Rail journeys;
-- connecting Rail journeys;
+- direct Rail journey patterns;
+- connecting Rail journey patterns;
 - Road and feasible Flight-led journeys;
 - mode and station changes;
 - overnight waits;
 - no-service results;
 - stale and incomplete-data behavior.
 
-Every pilot journey must be checked against published sources. The product succeeds when users can understand how to complete the journey, including every action, transfer, wait, and verification requirement.
+Every pilot journey must be checked against published sources. The product succeeds when users understand the possible ways to travel, the likely sequence of actions and transfers, the difficulty involved, and what they must verify themselves.
 
 ## Future business direction
 

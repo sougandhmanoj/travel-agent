@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "south-india-travel-guide-api"
+version = "0.1.0"
+description = "FastAPI backend for the South India Travel Guide"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "fastapi>=0.116,<1",
+    "uvicorn[standard]>=0.35,<1",
+    "pydantic-settings>=2.10,<3",
+    "httpx>=0.28,<1",
+    "supabase>=2.18,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx2>=2.7,<3",
+    "pytest>=8.4,<9",
+    "pytest-asyncio>=1.1,<2",
+    "ruff>=0.12,<1",
+    "mypy>=1.17,<2",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true

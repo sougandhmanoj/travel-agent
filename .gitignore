@@ -1,0 +1,46 @@
+# macOS
+.DS_Store
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node and React
+# No trailing slash so this also matches a node_modules symlink.
+node_modules
+dist/
+.vite/
+coverage/
+
+# Reproducible workbook QA and intermediate artifacts
+outputs/**/renders/
+outputs/**/*.inspect.ndjson
+outputs/**/backups/
+outputs/**/.*.xlsx
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Local editor files
+.idea/
+*.swp
+*.swo
+
+# Supabase local runtime
+supabase/.branches/
+supabase/.temp/

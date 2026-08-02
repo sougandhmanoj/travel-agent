@@ -18,9 +18,11 @@ class Settings(BaseSettings):
 
     frontend_origins: list[str] = ["http://localhost:5173"]
 
+    # These values are consumed only by the backend process. Never expose the
+    # service-role key through a VITE_* variable or browser bundle.
     supabase_url: AnyHttpUrl | None = None
-    supabase_key: SecretStr | None = None
-    google_routes_api_key: SecretStr | None = None
+    supabase_service_role_key: SecretStr | None = None
+    road_routing_provider: Literal["unavailable", "deterministic_test"] = "unavailable"
 
     model_config = SettingsConfigDict(
         env_file=".env",

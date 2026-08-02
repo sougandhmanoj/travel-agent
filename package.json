@@ -1,7 +1,7 @@
 {
   "name": "south-india-travel-guide",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "scripts": {
     "backend:check": "cd backend && .venv/bin/ruff check . && .venv/bin/mypy app tests && .venv/bin/pytest",
     "frontend:dev": "npm --prefix frontend run dev",

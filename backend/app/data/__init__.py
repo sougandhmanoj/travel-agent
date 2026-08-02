@@ -1,0 +1,1 @@
+"""Backend-only persistence adapters."""

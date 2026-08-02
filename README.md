@@ -2,28 +2,31 @@
 
 An explanation-first journey planner for unfamiliar travellers moving between supported cities and transport hubs in Kerala, Karnataka, Tamil Nadu, and Goa.
 
-The product will evaluate Road, Rail, and Air for every valid search, show one Recommended journey, and include only the other modes that produce a useful and practical door-to-door plan. Booking, accounts, payments, live tracking, and full-India coverage are outside the MVP.
+The product will evaluate Road, Rail, and Air for every valid search, show one Recommended journey, and include only other modes that produce useful, practical door-to-door plans. Booking, accounts, payments, live tracking, and full-India coverage are outside the MVP.
 
 ## Project status
 
-**Milestone 1 — Foundations: complete**
+**Milestone 2 — Backend vertical slice: complete**
 
-The repository now has working frontend, backend, database, and verified-data foundations:
+The repository now provides:
 
-- React 19, TypeScript, Vite, Tailwind CSS, and React Router frontend environment
-- FastAPI, Pydantic Settings, typed response models, CORS configuration, and health endpoints
-- Local Supabase/PostgreSQL project with isolated ports so it can run beside other local projects
-- Versioned `cities`, `transport_hubs`, and `import_batches` database schema
-- Row Level Security with public read-only policies for supported places
-- Transactional workbook import using staging tables, validation gates, and an audit record
-- 158 verified cities/localities and 500 verified transport hubs loaded with unchanged stable IDs
-- Repeatable backend, frontend, database, and schema-lint checks
+- React 19/Vite/Tailwind frontend foundation from Milestone 1
+- FastAPI 0.2 backend with server-only Supabase/PostgreSQL data access
+- ranked search across all 158 supported cities/localities and 500 transport hubs
+- complete typed contracts for endpoints, journeys, ranges, legs, warnings, provenance, verification, scoring, and map geometry
+- provider-neutral road-routing protocol and deterministic test fixture
+- Road journey planning for city and hub endpoint combinations
+- endpoint-aware first-mile/last-mile behavior, door-to-door totals, cost ranges, warnings, assumptions, sources, and verification guidance
+- transparent unavailable responses for absent, failed, incomplete, or invalid routing data
+- configurable recommendation scoring with safety and feasibility hard gates
+- OpenAPI request/response examples and 33 deterministic backend tests
+- the unchanged, repeatable verified workbook import and database reset workflow
 
-The frontend currently shows a foundation-status page. Place search and journey results intentionally begin in Milestone 2.
+The frontend still shows the Milestone 1 foundation screen. Search/results UI begins in Milestone 4; API behavior is interactive in FastAPI Swagger during Milestone 2.
 
 ## Verified launch data
 
-The authoritative input is [`outputs/south_india_hubs_workbook/south_india_mvp_final_verified.xlsx`](outputs/south_india_hubs_workbook/south_india_mvp_final_verified.xlsx).
+The authoritative input remains [`outputs/south_india_hubs_workbook/south_india_mvp_final_verified.xlsx`](outputs/south_india_hubs_workbook/south_india_mvp_final_verified.xlsx). Milestone 2 did not modify it, its stable IDs, the generated seed, or the database schema.
 
 | Dataset | Imported rows |
 | --- | ---: |
@@ -34,61 +37,100 @@ The authoritative input is [`outputs/south_india_hubs_workbook/south_india_mvp_f
 | Metro stations | 149 |
 | **Transport hubs total** | **500** |
 
-The imported workbook SHA-256 is:
+Workbook SHA-256:
 
 ```text
 0034f2f33195c8223859e7ef50eb29bb58f67f7ce39736e09b9b21f5a3e38a7b
 ```
 
-One source-field normalization is deliberate and recorded in `import_batches.validation_results`: `hub_00748.code` contains a descriptive phrase rather than a short transport code, so it is imported as `NULL`. The workbook, hub ID, hub name, coordinates, notes, and provenance remain unchanged.
+One source-field normalization remains deliberately recorded in `import_batches.validation_results`: `hub_00748.code` contains a descriptive phrase, so the database imports it as `NULL`. The workbook row and all other source fields remain unchanged.
 
 ## Repository structure
 
 ```text
-backend/                     FastAPI application, settings, models, and tests
-frontend/                    React/Vite/Tailwind application foundation
-outputs/                     Authoritative verified workbook and research outputs
-scripts/                     Maintainer data-generation scripts
+backend/
+  app/api/                 versioned HTTP routes
+  app/core/                server configuration
+  app/data/                place repository protocol and Supabase adapter
+  app/routing/             Road provider contract, safe default, test fixture
+  app/services/            journey planning engine
+  app/models.py            public Pydantic API contracts
+  app/scoring.py           configurable recommendation scoring shell
+  tests/                   unit, API, data-access, and provider tests
+frontend/                  React/Vite/Tailwind foundation
+outputs/                   authoritative verified workbook and research outputs
+scripts/                   repeatable seed generator
 supabase/
-  migrations/               Versioned PostgreSQL schema
-  tests/database/            pgTAP database integrity tests
-  config.toml                Local Supabase configuration
-  seed.sql                   Generated, validated workbook import
-package.json                 Common validation and database commands
+  migrations/              versioned PostgreSQL schema
+  tests/database/          pgTAP integrity tests
+  seed.sql                 generated, validated workbook import
+package.json               common validation/database commands
 ```
 
-## How the foundation works
+## Milestone 2 architecture
 
-### Backend
+### Backend-only place data access
 
-`backend/app/main.py` creates the FastAPI application and installs restricted CORS middleware. `backend/app/api/router.py` exposes the versioned health endpoint at `/api/v1/health`. `backend/app/core/config.py` loads environment-specific values without putting secrets in source control. The existing Pydantic place models establish the first typed API contract.
+`SupabasePlaceRepository` is behind a `PlaceRepository` protocol. It reads the supported `cities` and `transport_hubs` rows, normalizes both tables into one place contract, and ranks matching names, locality/city names, states, and transport codes. Exact code/name, name prefix, word prefix, substring, locality/state, and fuzzy similarity determine stable ordering.
 
-### Frontend
+The Supabase service-role key is read only by FastAPI as `SUPABASE_SERVICE_ROLE_KEY`. It is never stored under a `VITE_*` variable, returned by an endpoint, or bundled into the browser. If backend credentials are absent or Supabase fails, search and planning return HTTP 503 instead of an empty, misleading result.
 
-`frontend/src/main.tsx` starts the React application inside `BrowserRouter`. `frontend/src/App.tsx` is a temporary foundation screen. `frontend/src/index.css` loads Tailwind CSS and establishes the 320-pixel minimum responsive baseline. Vite provides development and production builds.
+### Public endpoints
 
-### Database and import
+`GET /api/v1/places/search?q=` returns up to 20 ranked suggestions. Every result includes:
 
-`supabase/migrations/20260802110000_create_places.sql` creates normalized city and hub tables, foreign keys, constraints, indexes, timestamps, RLS policies, and the import audit table.
+- stable `place_id`
+- `name`
+- normalized `place_type`
+- `locality_or_city`
+- `state`
+- optional transport `code`
+- verified endpoint coordinates
 
-`scripts/generate_supabase_seed.mjs` reads the verified workbook, checks headers, IDs, duplicates, parent-city relationships, states, coordinates, modes, row counts, mode counts, flags, confidence values, and dates, then generates `supabase/seed.sql`.
+`POST /api/v1/journeys/plan` resolves both IDs and returns a candidate list. Milestone 2 contains one Road candidate; Rail and Air can be appended in Milestone 3 without changing the response envelope.
 
-The generated seed runs as one atomic PostgreSQL block:
+Input handling is explicit:
 
-1. Create staging tables.
-2. Load all workbook records into staging.
-3. Recheck counts, duplicate IDs, and city foreign keys inside PostgreSQL.
-4. Promote the rows to the application tables.
-5. Record the source hash, counts, validation result, and normalization note.
-6. Drop the staging tables.
+- malformed IDs: HTTP 422
+- well-formed unknown or unsupported IDs: HTTP 404
+- identical origin/destination: HTTP 409
+- place datastore unavailable: HTTP 503
+- routing failure/invalid provider response: HTTP 200 with a transparent unavailable Road candidate and no invented route facts
 
-Any failure rolls back the whole import. `supabase db reset` provides a clean, repeatable rollback/rebuild path.
+### Road-routing boundary
 
-The workbook generator uses the Codex workspace spreadsheet runtime (`@oai/artifact-tool`), which is not a public npm package. The committed `seed.sql` and all normal database commands work from a clean clone without that runtime. When the authoritative workbook changes, regenerate the seed in a Codex workspace with:
+The planning service depends only on `RoadRoutingProvider`, not Google Routes or another vendor. A provider must return validated route segments, duration, distance, geometry, and optional toll facts. Segment roles are validated against endpoint types:
 
-```bash
-npm run data:seed
-```
+| Journey | Required Road legs |
+| --- | --- |
+| city → city | first mile, main, last mile |
+| city → hub | first mile, main |
+| hub → city | main, last mile |
+| hub → hub | main only |
+
+The application defaults to `UnavailableRoadRoutingProvider` until a real adapter is configured. It never synthesizes live provider facts. `DeterministicRoadRoutingProvider` is available only for tests/local interaction, labels its output as test data, and is rejected when `ENVIRONMENT=production`.
+
+Road cost output includes:
+
+- self-drive fuel range using explicitly labelled fuel-price/economy assumptions
+- provider-supplied tolls only; missing tolls cause a warning and are not invented
+- optional indicative hired-cab range, clearly labelled as a planning estimate rather than a quote
+
+Duration ranges use provider duration plus a disclosed 35% planning contingency. Warnings, assumptions, source labels, and verification requirements travel with each candidate.
+
+### Recommendation scoring
+
+The initial configurable weights are:
+
+| Criterion | Weight |
+| --- | ---: |
+| Reliability | 30% |
+| Simplicity / transfer difficulty | 25% |
+| Door-to-door time | 20% |
+| Cost | 15% |
+| Comfort | 10% |
+
+Safety and feasibility are hard gates. A candidate that fails either gate receives no recommendation score regardless of its weighted values. Milestone 2 recommends Road only when its validated candidate is available.
 
 ## Local setup
 
@@ -99,18 +141,12 @@ npm run data:seed
 - Docker Desktop
 - Supabase CLI through `npx`
 
-### 1. Install the frontend
+### 1. Install dependencies
 
 ```bash
 cd frontend
 npm install
-cd ..
-```
-
-### 2. Install the backend
-
-```bash
-cd backend
+cd ../backend
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -119,28 +155,32 @@ cp .env.example .env
 cd ..
 ```
 
-Keep real API keys only in `backend/.env`; `.env` files are ignored by Git.
-
-### 3. Start the local database
-
-Start Docker Desktop, then run:
+### 2. Start and configure local Supabase
 
 ```bash
 npm run db:start
+npx supabase status -o env
 ```
 
-The lean local stack keeps PostgreSQL and the Supabase Data API enabled. Accounts, Realtime, Storage, Studio, Analytics, and Edge Functions are disabled because they are not needed by this MVP foundation.
+Copy the displayed local API URL and service-role key into `backend/.env`:
+
+```dotenv
+SUPABASE_URL=http://127.0.0.1:54421
+SUPABASE_SERVICE_ROLE_KEY=the-local-SERVICE_ROLE_KEY-value
+```
+
+Keep real keys only in `backend/.env`; `.env` files are ignored by Git. Never place the service-role key in `frontend/.env`.
+
+The isolated local ports remain:
 
 | Service | Local address |
 | --- | --- |
 | Supabase API | `http://127.0.0.1:54421` |
 | PostgreSQL | `postgresql://postgres:postgres@127.0.0.1:54422/postgres` |
 
-The non-default 5442x ports avoid conflicts with other Supabase projects using 5432x.
+### 3. Run the backend
 
-### 4. Run the applications
-
-Backend terminal:
+For safe default behavior (search works; Road reports unavailable without a real provider):
 
 ```bash
 cd backend
@@ -148,19 +188,39 @@ source .venv/bin/activate
 uvicorn app.main:app --reload
 ```
 
-Open `http://127.0.0.1:8000/docs` for interactive API documentation.
+For local interactive Road-plan fixtures, set this in `backend/.env` and restart:
 
-Frontend terminal:
+```dotenv
+ENVIRONMENT=development
+ROAD_ROUTING_PROVIDER=deterministic_test
+```
+
+Fixture routes are deterministic demonstrations, not live navigation data. Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) for Swagger UI.
+
+Example search:
+
+```bash
+curl --get 'http://127.0.0.1:8000/api/v1/places/search' \
+  --data-urlencode 'q=goa'
+```
+
+Example Road plan:
+
+```bash
+curl --request POST 'http://127.0.0.1:8000/api/v1/journeys/plan' \
+  --header 'Content-Type: application/json' \
+  --data '{"origin_place_id":"goa_panaji","destination_place_id":"hub_00001"}'
+```
+
+The frontend foundation can still be started with:
 
 ```bash
 npm run frontend:dev
 ```
 
-Open `http://localhost:5173`.
-
 ## Validation commands
 
-Run these from the repository root:
+Run from the repository root:
 
 ```bash
 npm run backend:check
@@ -170,61 +230,81 @@ npm run db:test
 npm run db:lint
 ```
 
-What they verify:
+Coverage:
 
-- `backend:check`: Ruff, strict MyPy, and 5 Pytest tests
-- `frontend:check`: ESLint, TypeScript, and a production Vite build
-- `db:reset`: rebuilds the database from the migration and verified seed
-- `db:test`: runs 22 pgTAP checks for tables, counts, modes, IDs, relationships, dates, audit status, staging cleanup, and RLS
-- `db:lint`: checks the live PostgreSQL schema for warnings
+- `backend:check`: Ruff, strict MyPy, and 33 deterministic Pytest tests
+- tests include models, scoring hard gates, planning service, API/OpenAPI, mocked Supabase HTTP/auth/mapping, provider contracts, all endpoint combinations, invalid IDs, same endpoints, unsupported IDs, routing failure, and incomplete/invalid provider data
+- `frontend:check`: ESLint, TypeScript, and production Vite build
+- `db:reset`: migration plus atomic verified-workbook seed
+- `db:test`: 22 pgTAP checks covering counts, stable IDs, relationships, modes, dates, audit record, staging cleanup, and RLS
+- `db:lint`: live PostgreSQL schema warnings/errors
 
-### Dependency security note
+When the authoritative workbook changes, regenerate `supabase/seed.sql` in a Codex workspace with:
 
-As of 2 August 2026, `npm audit` flags the current stable React Router 7.18.2 for [GHSA-qwww-vcr4-c8h2](https://github.com/advisories/GHSA-qwww-vcr4-c8h2), which concerns React Server Components action handling. This project is a client-side Vite application using `BrowserRouter`; it does not enable React Server Components or server actions, so the affected execution path is absent. Keep React Router pinned, do not introduce RSC mode, and upgrade once a patched stable release is published.
+```bash
+npm run data:seed
+```
 
-To stop only this project's local Supabase stack:
+The generator uses the workspace-only `@oai/artifact-tool`; normal setup/reset/test commands work from a clean clone without it.
+
+To stop only this project’s local stack:
 
 ```bash
 npm run db:stop
 ```
 
-## Milestone 1 completion evidence
+## Milestone 2 completion evidence
 
-The completed clean-run result is:
+Completed on 2 August 2026:
 
-- Database reset, migration, and seed: passed
-- Workbook validation: 158 cities and 500 hubs passed
-- pgTAP: 22/22 passed
-- PostgreSQL schema lint: no errors or warnings
-- Backend: Ruff passed, strict MyPy passed, 5/5 tests passed
-- Frontend: ESLint passed, TypeScript passed, production build passed
+- pre-change baseline: backend 5/5 tests, frontend checks, database reset, pgTAP 22/22, and schema lint all passed
+- backend final: Ruff passed; strict MyPy passed; Pytest 33/33 passed
+- frontend final: ESLint passed; TypeScript passed; production build passed
+- database final: reset/migration/seed passed; pgTAP 22/22 passed; schema lint returned no warnings or errors
+- authoritative workbook, schema migration, generated seed, and all 658 stable IDs remained unchanged
 
-## Milestone 2 handoff
+## What can be tested interactively now
 
-**Next milestone: Backend vertical slice**
+In Swagger UI at `/docs`, you can:
 
-Start the next chat with this instruction:
+1. Search partial place names, city/locality names, states, and codes such as `goa`, `beng`, `GOI`, or `SBC` and inspect ranked city/hub results.
+2. Submit city-to-city, city-to-hub, hub-to-city, and hub-to-hub journey IDs.
+3. With `ROAD_ROUTING_PROVIDER=deterministic_test`, inspect access-leg suppression, door-to-door ranges, self-drive and hired-cab estimates, map geometry JSON, warnings, source labels, verification guidance, and recommendation score.
+4. With the default provider, verify the honest unavailable state.
+5. Try malformed IDs, unknown IDs, and identical endpoints to inspect 422, 404, and 409 responses.
 
-> Continue the South India Travel Guide from Milestone 1. Read the root README first, verify the existing checks, and implement Milestone 2: database access, ranked place search, shared journey-plan contracts, a Road planning vertical slice, and a scoring shell. Preserve all stable IDs and the verified import workflow. Finish with tests and update the README with a Milestone 3 handoff.
+There is no complete visual results page or rendered map yet. Those remain deliberately out of Milestone 2 scope.
 
-Milestone 2 should deliver:
+## Milestone 3 handoff
 
-1. A backend-only Supabase/PostgreSQL data-access layer with secrets kept out of the browser.
-2. `GET /api/v1/places/search?q=` returning ranked city and hub suggestions.
-3. Shared Pydantic journey request/response, leg, range, warning, provenance, and map-geometry contracts.
-4. A replaceable road-routing provider interface with deterministic test fixtures.
-5. A Road candidate that includes first/last-mile logic, duration and cost ranges, warnings, and source labels.
-6. The initial configurable recommendation scoring shell.
-7. Representative API and unit tests, including invalid IDs, same endpoints, unsupported places, station endpoints, and provider failure.
-8. Interactive OpenAPI examples proving representative searches return validated JSON.
+**Next milestone: Multimodal engine**
 
-Do not begin Rail, Air, the full results UI, or production deployment in Milestone 2. Those belong to later milestones.
+Start the next task with:
+
+> Continue the South India Travel Guide from Milestone 2. Read the root README completely and run all current validation commands before changing anything. Implement Milestone 3: add production-grade replaceable provider adapters and Rail/Air candidate planning; model schedules, transfer/buffer rules, airport/station access, feasibility and safety gates, freshness and verification; compare available Road/Rail/Air candidates with the existing scoring shell; preserve the public journey contract or evolve it backward-compatibly; use deterministic fixtures in routine tests and never invent provider data. Preserve all stable place IDs, the verified workbook, and the repeatable database reset/import workflow. Do not build the complete results UI, booking, accounts, or deployment. Finish by running every check, updating README with exact results, and writing the Milestone 4 frontend handoff.
+
+Milestone 3 should add:
+
+1. Rail and Air provider-neutral contracts/adapters with deterministic fixtures.
+2. Nearest/practical hub selection and city/hub access/egress planning.
+3. Schedule, connection, transfer, check-in, boarding, and disruption buffers.
+4. Hard safety/feasibility gates and honest unavailable/fallback behavior.
+5. Comparable door-to-door time/cost/comfort/reliability inputs across all modes.
+6. Recommendation selection across available candidates using the existing weights.
+7. Freshness, provenance, assumptions, warnings, and user verification guidance.
+8. Expanded unit, API, data-access, provider-contract, and edge-case tests.
+
+Do not begin the complete results UI, booking, accounts, or deployment in Milestone 3.
 
 ## Six-milestone roadmap
 
-1. **Foundations — complete:** environments, schema, verified import, and integrity checks.
-2. **Backend vertical slice — next:** place search, Road plan, contracts, and scoring shell.
-3. **Multimodal engine:** Rail/Air candidates, buffers, gates, scoring, warnings, and fallbacks.
-4. **Frontend experience:** search, results, detail timeline, map, responsive states, and accessibility.
-5. **Trust and operations:** freshness, disclaimers, rate limits, analytics, and outage behaviour.
-6. **Pilot launch:** deployment, moderated usability tests, and blocking fixes.
+1. **Foundations — complete:** environments, schema, verified import, integrity checks.
+2. **Backend vertical slice — complete:** place search, Road plan, contracts, scoring shell.
+3. **Multimodal engine — next:** Rail/Air candidates, buffers, gates, scoring, fallbacks.
+4. **Frontend experience:** search, results, detail timeline, map, responsive states, accessibility.
+5. **Trust and operations:** freshness, disclaimers, rate limits, analytics, outage behavior.
+6. **Pilot launch:** deployment, moderated usability tests, blocking fixes.
+
+### Dependency security note
+
+As of 2 August 2026, `npm audit` flags React Router 7.18.2 for [GHSA-qwww-vcr4-c8h2](https://github.com/advisories/GHSA-qwww-vcr4-c8h2), involving React Server Components action handling. This project is client-side Vite with `BrowserRouter` and does not enable that execution path. Keep it pinned, do not introduce RSC mode, and upgrade when a patched stable release is available.

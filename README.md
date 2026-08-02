@@ -24,6 +24,12 @@ The repository now provides:
 
 The frontend still shows the Milestone 1 foundation screen. Search/results UI begins in Milestone 4; API behavior is interactive in FastAPI Swagger during Milestone 2.
 
+## Product source of truth
+
+[`docs/product-and-planning-spec.md`](docs/product-and-planning-spec.md) records the agreed product vision, journey terminology, multimodal candidate-generation rules, transfer and buffer policy, recommendation logic, data-trust requirements, MVP boundaries, and acceptance criteria.
+
+Every future milestone must read that specification and this README completely before planning or changing code. The specification defines intended journey behavior; this README records what the repository currently implements. If they conflict, the conflict must be identified and resolved explicitly rather than silently preserving the current implementation.
+
 ## Verified launch data
 
 The authoritative input remains [`outputs/south_india_hubs_workbook/south_india_mvp_final_verified.xlsx`](outputs/south_india_hubs_workbook/south_india_mvp_final_verified.xlsx). Milestone 2 did not modify it, its stable IDs, the generated seed, or the database schema.
@@ -71,9 +77,37 @@ package.json               common validation/database commands
 
 ### Backend-only place data access
 
-`SupabasePlaceRepository` is behind a `PlaceRepository` protocol. It reads the supported `cities` and `transport_hubs` rows, normalizes both tables into one place contract, and ranks matching names, locality/city names, states, and transport codes. Exact code/name, name prefix, word prefix, substring, locality/state, and fuzzy similarity determine stable ordering.
+Place data follows a simple server-side path:
 
-The Supabase service-role key is read only by FastAPI as `SUPABASE_SERVICE_ROLE_KEY`. It is never stored under a `VITE_*` variable, returned by an endpoint, or bundled into the browser. If backend credentials are absent or Supabase fails, search and planning return HTTP 503 instead of an empty, misleading result.
+```mermaid
+flowchart LR
+    Browser["Browser / frontend"] -->|"HTTP request"| API["FastAPI endpoints"]
+    API --> Repository["PlaceRepository interface"]
+    Repository --> Adapter["SupabasePlaceRepository"]
+    Adapter -->|"Server credentials"| Database["Supabase / PostgreSQL"]
+    Database --> Adapter
+    Adapter -->|"Normalized places"| API
+    API -->|"Safe JSON response"| Browser
+```
+
+Each layer has one clear responsibility:
+
+1. **The browser calls FastAPI.** It sends a search query or journey request and never connects directly to the database.
+2. **FastAPI handles the public API.** It validates input, calls the data layer, and returns safe JSON responses.
+3. **`PlaceRepository` is the boundary.** The rest of the application asks it to search for or resolve a place without needing to know which database is used.
+4. **`SupabasePlaceRepository` is the current database adapter.** It reads supported records from `cities` and `transport_hubs`, then converts both table formats into the same `PlaceSummary` model.
+
+This boundary keeps the application replaceable and testable. Tests use `InMemoryPlaceRepository`, while the running backend uses `SupabasePlaceRepository`. A future PostgreSQL or another datastore adapter can replace Supabase without changing the search or journey-planning services.
+
+Search considers all supported city and hub records. Results are ranked in this order: exact name or transport-code match, beginning-of-name match, word-prefix match, name substring, locality/city or state match, and finally fuzzy similarity. Stable tie-breakers keep repeated searches in the same order.
+
+The Supabase service-role key exists only in the backend environment as `SUPABASE_SERVICE_ROLE_KEY`:
+
+- it is never placed in a `VITE_*` variable;
+- it is never included in the frontend bundle or an API response;
+- only `SupabasePlaceRepository` uses it when contacting Supabase.
+
+If credentials are missing or Supabase cannot be reached, the API returns HTTP 503. It does not return an empty list, because that could incorrectly suggest that a valid place has no matches.
 
 ### Public endpoints
 
@@ -281,7 +315,7 @@ There is no complete visual results page or rendered map yet. Those remain delib
 
 Start the next task with:
 
-> Continue the South India Travel Guide from Milestone 2. Read the root README completely and run all current validation commands before changing anything. Implement Milestone 3: add production-grade replaceable provider adapters and Rail/Air candidate planning; model schedules, transfer/buffer rules, airport/station access, feasibility and safety gates, freshness and verification; compare available Road/Rail/Air candidates with the existing scoring shell; preserve the public journey contract or evolve it backward-compatibly; use deterministic fixtures in routine tests and never invent provider data. Preserve all stable place IDs, the verified workbook, and the repeatable database reset/import workflow. Do not build the complete results UI, booking, accounts, or deployment. Finish by running every check, updating README with exact results, and writing the Milestone 4 frontend handoff.
+> Continue the South India Travel Guide from Milestone 2. First read the root README.md and docs/product-and-planning-spec.md completely. Treat the product specification as the source of truth for journey behavior and the README as the implementation/completion record. Run all current validation commands before changing anything and identify conflicts between the Milestone 2 implementation and the agreed product specification. Implement Milestone 3 as a complete multimodal itinerary engine: add production-grade replaceable provider adapters and Rail/Air-led candidate planning; model published schedules, operating days, interchange search, traveller-action transfers, station/mode changes, leg-specific buffers, airport/station access, progressive difficulty relaxation, feasibility and safety gates, freshness, provenance, and verification. Rank complete multimodal itineraries rather than isolated modes using the agreed scoring rules. Preserve or backward-compatibly evolve the public contract, stable place IDs, verified workbook, and repeatable database reset/import workflow. Use deterministic fixtures in routine tests and never invent provider data. Do not build the complete results UI, booking, accounts, affiliate links, or deployment. Finish by running every check, updating both documents where appropriate, recording exact results, and writing the Milestone 4 frontend handoff with the same required-reading instruction.
 
 Milestone 3 should add:
 

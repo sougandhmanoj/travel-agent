@@ -56,6 +56,7 @@ def test_supabase_repository_maps_and_searches_both_tables() -> None:
     assert {result.place_type for result in results} == {PlaceType.CITY, PlaceType.AIRPORT}
     airport = next(result for result in results if result.place_type == PlaceType.AIRPORT)
     assert airport.locality_or_city == "Dabolim"
+    assert airport.associated_city_id == "goa_panaji"
 
 
 def test_supabase_repository_rejects_non_list_payload() -> None:

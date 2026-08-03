@@ -1,7 +1,16 @@
+from datetime import date, timedelta
+
 import pytest
 from pydantic import ValidationError
 
-from app.models import CostRange, DurationRange, PlaceSummary, PlaceType, RouteGeometry
+from app.models import (
+    CostRange,
+    DurationRange,
+    JourneyPlanRequest,
+    PlaceSummary,
+    PlaceType,
+    RouteGeometry,
+)
 
 
 def test_place_summary_accepts_a_valid_city() -> None:
@@ -43,4 +52,19 @@ def test_place_summary_rejects_invalid_coordinates() -> None:
             state="Goa",
             latitude=120,
             longitude=73.8278,
+        )
+
+
+def test_travel_date_accepts_mvp_window_and_rejects_outside_it() -> None:
+    request = JourneyPlanRequest(
+        origin_place_id="goa_panaji",
+        destination_place_id="karnataka_bengaluru",
+        travel_date=date.today() + timedelta(days=90),
+    )
+    assert request.travel_date is not None
+    with pytest.raises(ValidationError, match="next 90 days"):
+        JourneyPlanRequest(
+            origin_place_id="goa_panaji",
+            destination_place_id="karnataka_bengaluru",
+            travel_date=date.today() + timedelta(days=91),
         )

@@ -15,6 +15,7 @@ def test_search_returns_ranked_city_and_hub_details(client: TestClient) -> None:
         "code": "GOI",
         "latitude": 15.3805865,
         "longitude": 73.8326572,
+        "associated_city_id": "goa_panaji",
     }
 
 

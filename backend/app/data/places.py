@@ -18,6 +18,8 @@ class PlaceRepository(Protocol):
 
     def get(self, place_id: str) -> PlaceSummary | None: ...
 
+    def all(self) -> list[PlaceSummary]: ...
+
 
 HUB_TYPE_MAP = {
     "Airport": PlaceType.AIRPORT,
@@ -130,6 +132,7 @@ class SupabasePlaceRepository:
                     code=str(row["code"]) if row.get("code") else None,
                     latitude=float(row["latitude"]),
                     longitude=float(row["longitude"]),
+                    associated_city_id=str(row["city_id"]),
                 )
                 for row in hubs
             )
@@ -142,7 +145,8 @@ class SupabasePlaceRepository:
         candidates = [
             place
             for place in self._all_places()
-            if needle in " ".join(
+            if needle
+            in " ".join(
                 [place.name, place.locality_or_city, place.state, place.code or ""]
             ).casefold()
             or SequenceMatcher(None, needle, place.name.casefold()).ratio() >= 0.6
@@ -151,6 +155,9 @@ class SupabasePlaceRepository:
 
     def get(self, place_id: str) -> PlaceSummary | None:
         return next((place for place in self._all_places() if place.place_id == place_id), None)
+
+    def all(self) -> list[PlaceSummary]:
+        return self._all_places()
 
 
 class InMemoryPlaceRepository:
@@ -174,6 +181,9 @@ class InMemoryPlaceRepository:
     def get(self, place_id: str) -> PlaceSummary | None:
         return next((place for place in self._places if place.place_id == place_id), None)
 
+    def all(self) -> list[PlaceSummary]:
+        return list(self._places)
+
 
 class UnavailablePlaceRepository:
     """Reports missing server configuration without silently returning no matches."""
@@ -184,4 +194,7 @@ class UnavailablePlaceRepository:
 
     def get(self, place_id: str) -> PlaceSummary | None:
         del place_id
+        raise PlaceRepositoryError("Supabase backend credentials are not configured")
+
+    def all(self) -> list[PlaceSummary]:
         raise PlaceRepositoryError("Supabase backend credentials are not configured")

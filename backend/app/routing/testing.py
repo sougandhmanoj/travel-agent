@@ -20,9 +20,7 @@ def _distance_metres(start: Coordinates, end: Coordinates) -> int:
         radians,
         [start.latitude, start.longitude, end.latitude, end.longitude],
     )
-    haversine = sin((lat2 - lat1) / 2) ** 2 + cos(lat1) * cos(lat2) * sin(
-        (lon2 - lon1) / 2
-    ) ** 2
+    haversine = sin((lat2 - lat1) / 2) ** 2 + cos(lat1) * cos(lat2) * sin((lon2 - lon1) / 2) ** 2
     direct_km = 2 * 6371 * asin(sqrt(haversine))
     return max(100, round(direct_km * 1.2 * 1000))
 

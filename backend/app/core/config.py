@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     supabase_url: AnyHttpUrl | None = None
     supabase_service_role_key: SecretStr | None = None
     road_routing_provider: Literal["unavailable", "deterministic_test"] = "unavailable"
+    multimodal_provider: Literal["unavailable", "deterministic_test"] = "unavailable"
 
     model_config = SettingsConfigDict(
         env_file=".env",

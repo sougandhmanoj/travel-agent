@@ -1,0 +1,1 @@
+"""Replaceable multimodal provider contracts."""

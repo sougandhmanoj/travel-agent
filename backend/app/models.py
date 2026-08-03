@@ -1,5 +1,6 @@
-"""Public API contracts for places and multimodal journey planning."""
+"""Public API contracts for places and educational multimodal journey patterns."""
 
+from datetime import date, timedelta
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -27,11 +28,10 @@ class PlaceSummary(BaseModel):
     code: str | None = Field(default=None, max_length=20)
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
+    associated_city_id: str | None = None
 
     @property
     def city_name(self) -> str:
-        """Backward-compatible Python alias used by Milestone 1 callers."""
-
         return self.locality_or_city
 
 
@@ -42,14 +42,11 @@ class PlaceSearchResponse(BaseModel):
 
 class Coordinates(BaseModel):
     model_config = ConfigDict(frozen=True)
-
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
 
 
 class NormalizedEndpoint(BaseModel):
-    """Resolved endpoint echoed in every plan."""
-
     place_id: str
     name: str
     place_type: PlaceType
@@ -57,6 +54,7 @@ class NormalizedEndpoint(BaseModel):
     state: str
     code: str | None = None
     location: Coordinates
+    associated_city_id: str | None = None
 
     @classmethod
     def from_place(cls, place: PlaceSummary) -> "NormalizedEndpoint":
@@ -68,6 +66,7 @@ class NormalizedEndpoint(BaseModel):
             state=place.state,
             code=place.code,
             location=Coordinates(latitude=place.latitude, longitude=place.longitude),
+            associated_city_id=place.associated_city_id,
         )
 
 
@@ -99,8 +98,6 @@ class GeometryType(StrEnum):
 
 
 class RouteGeometry(BaseModel):
-    """GeoJSON-compatible route geometry; coordinate order is longitude, latitude."""
-
     type: GeometryType = GeometryType.LINE_STRING
     coordinates: Annotated[list[tuple[float, float]], Field(min_length=2)]
 
@@ -117,9 +114,20 @@ class JourneyMode(StrEnum):
     AIR = "air"
 
 
+class TravelMode(StrEnum):
+    ROAD = "road"
+    RAIL = "rail"
+    AIR = "air"
+    METRO = "metro"
+    BUS = "bus"
+    AUTO_CAB = "auto_cab"
+    WALKING = "walking"
+
+
 class LegRole(StrEnum):
     FIRST_MILE = "first_mile"
     MAIN = "main"
+    CONNECTION = "connection"
     LAST_MILE = "last_mile"
 
 
@@ -129,16 +137,64 @@ class JourneyPoint(BaseModel):
     location: Coordinates
 
 
+class IntermediateStop(BaseModel):
+    """A stop where the traveller remains onboard; never a transfer."""
+
+    name: str
+    place_id: str | None = None
+    guidance: str = "Stay onboard this service."
+
+
+class CostBasis(StrEnum):
+    PER_PERSON = "per_person"
+    PER_VEHICLE = "per_vehicle"
+
+
+class CostCoverage(StrEnum):
+    COMPLETE_ESTIMATE = "complete_estimate"
+    PARTIAL_ESTIMATE = "partial_estimate"
+    UNAVAILABLE = "unavailable"
+
+
+class LegCost(BaseModel):
+    range: CostRange
+    basis: CostBasis
+    description: str
+
+
 class JourneyLeg(BaseModel):
     leg_id: str
     role: LegRole
-    mode: JourneyMode
+    mode: TravelMode
     origin: JourneyPoint
     destination: JourneyPoint
-    distance_km: Annotated[float, Field(gt=0)]
+    distance_km: Annotated[float, Field(gt=0)] | None = None
     duration: DurationRange
-    geometry: RouteGeometry
+    geometry: RouteGeometry | None = None
     instructions: str
+    service_name: str | None = None
+    service_code: str | None = None
+    intermediate_stops: list[IntermediateStop] = Field(default_factory=list)
+    cost: LegCost | None = None
+
+
+class ConnectionKind(StrEnum):
+    TRANSFER = "transfer"
+    MODE_CHANGE = "mode_change"
+    STATION_CHANGE = "station_change"
+    INDICATIVE_WAIT = "indicative_wait"
+    SUGGESTED_BUFFER = "suggested_buffer"
+
+
+class JourneyConnection(BaseModel):
+    connection_id: str
+    kind: ConnectionKind
+    location_name: str
+    from_leg_id: str | None = None
+    to_leg_id: str | None = None
+    duration: DurationRange | None = None
+    guidance: str
+    overnight_possible: bool = False
 
 
 class WarningSeverity(StrEnum):
@@ -156,7 +212,17 @@ class JourneyWarning(BaseModel):
 class SourceKind(StrEnum):
     VERIFIED_DATASET = "verified_dataset"
     ROUTING_PROVIDER = "routing_provider"
+    SERVICE_PROVIDER = "service_provider"
+    LOCAL_TRANSFER_PROVIDER = "local_transfer_provider"
+    FARE_PROVIDER = "fare_provider"
     PLANNING_ESTIMATE = "planning_estimate"
+
+
+class FreshnessStatus(StrEnum):
+    CURRENT = "current"
+    AGING = "aging"
+    STALE = "stale"
+    UNKNOWN = "unknown"
 
 
 class SourceLabel(BaseModel):
@@ -164,6 +230,8 @@ class SourceLabel(BaseModel):
     kind: SourceKind
     label: str
     detail: str
+    last_checked: date | None = None
+    freshness: FreshnessStatus = FreshnessStatus.UNKNOWN
 
 
 class VerificationRequirement(BaseModel):
@@ -183,16 +251,27 @@ class JourneyPlanRequest(BaseModel):
             "examples": [
                 {
                     "origin_place_id": "goa_panaji",
-                    "destination_place_id": "hub_00001",
+                    "destination_place_id": "karnataka_bengaluru",
+                    "travel_date": "2026-08-20",
                     "road": {"travellers": 2, "include_hired_cab_estimate": True},
                 }
             ]
         }
     )
-
     origin_place_id: str = Field(pattern=r"^[a-z0-9_]+$", min_length=1, max_length=100)
     destination_place_id: str = Field(pattern=r"^[a-z0-9_]+$", min_length=1, max_length=100)
+    # Optional preserves Milestone 2 callers. It is context only, not an availability claim.
+    travel_date: date | None = None
     road: RoadPreferences = Field(default_factory=RoadPreferences)
+
+    @model_validator(mode="after")
+    def travel_date_is_in_mvp_window(self) -> "JourneyPlanRequest":
+        if self.travel_date is None:
+            return self
+        today = date.today()
+        if self.travel_date < today or self.travel_date > today + timedelta(days=90):
+            raise ValueError("travel_date must be today or within the next 90 days")
+        return self
 
 
 class CostComponent(BaseModel):
@@ -205,6 +284,18 @@ class RoadCostEstimates(BaseModel):
     self_drive_total: CostRange
     self_drive_components: list[CostComponent]
     hired_cab_total: CostRange | None
+    self_drive_basis: CostBasis = CostBasis.PER_VEHICLE
+    hired_cab_basis: CostBasis = CostBasis.PER_VEHICLE
+    coverage: CostCoverage = CostCoverage.PARTIAL_ESTIMATE
+
+
+class JourneyCostSummary(BaseModel):
+    total: CostRange | None
+    basis: CostBasis
+    coverage: CostCoverage
+    included_legs: int = 0
+    total_legs: int = 0
+    explanation: str
 
 
 class ScoreBreakdown(BaseModel):
@@ -218,20 +309,55 @@ class ScoreBreakdown(BaseModel):
 
 class CandidateStatus(StrEnum):
     AVAILABLE = "available"
+    UNVERIFIED = "unverified"
     UNAVAILABLE = "unavailable"
 
 
+class DifficultyLevel(StrEnum):
+    EASY = "easy"
+    MANAGEABLE = "manageable"
+    DIFFICULT = "difficult"
+    UNVERIFIED_POSSIBILITY = "unverified_possibility"
+
+
+class ConfidenceLevel(StrEnum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class DisplaySlot(StrEnum):
+    RECOMMENDED = "recommended"
+    RAIL_ALTERNATIVE = "rail_alternative"
+    ROAD_ALTERNATIVE = "road_alternative"
+    FLIGHT_ALTERNATIVE = "flight_alternative"
+    UNVERIFIED_POSSIBILITY = "unverified_possibility"
+
+
 class JourneyCandidate(BaseModel):
+    candidate_id: str = "candidate"
     mode: JourneyMode
+    dominant_mode: JourneyMode | None = None
     status: CandidateStatus
     recommended: bool
+    display_slot: DisplaySlot | None = None
+    position_explanation: str = ""
     safety_gate_passed: bool
     feasibility_gate_passed: bool
     score: ScoreBreakdown | None
     total_duration: DurationRange | None
     total_distance_km: float | None
-    cost: RoadCostEstimates | None
+    cost: RoadCostEstimates | JourneyCostSummary | None
     legs: list[JourneyLeg]
+    intermediate_stops: list[IntermediateStop] = Field(default_factory=list)
+    connections: list[JourneyConnection] = Field(default_factory=list)
+    transfer_count: int = Field(default=0, ge=0)
+    mode_change_count: int = Field(default=0, ge=0)
+    station_change_count: int = Field(default=0, ge=0)
+    possible_wait_count: int = Field(default=0, ge=0)
+    suggested_buffer_count: int = Field(default=0, ge=0)
+    difficulty: DifficultyLevel = DifficultyLevel.EASY
+    confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
     geometry: RouteGeometry | None
     warnings: list[JourneyWarning]
     assumptions: list[str]
@@ -239,9 +365,21 @@ class JourneyCandidate(BaseModel):
     verification_requirements: list[VerificationRequirement]
     unavailable_reason: str | None = None
 
+    @model_validator(mode="after")
+    def normalize_and_validate_counts(self) -> "JourneyCandidate":
+        if self.dominant_mode is None:
+            object.__setattr__(self, "dominant_mode", self.mode)
+        stop_count = sum(len(leg.intermediate_stops) for leg in self.legs)
+        if stop_count != len(self.intermediate_stops):
+            raise ValueError("candidate intermediate_stops must mirror leg intermediate stops")
+        actual_transfers = sum(c.kind == ConnectionKind.TRANSFER for c in self.connections)
+        if actual_transfers != self.transfer_count:
+            raise ValueError("transfer_count must count traveller boarding actions only")
+        return self
+
 
 class JourneyPlanResponse(BaseModel):
-    """Extensible candidate list; Rail and Air can be appended without a contract change."""
+    """Backward-compatible envelope containing complete multimodal candidates."""
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -253,57 +391,27 @@ class JourneyPlanResponse(BaseModel):
                         "place_type": "city",
                         "locality_or_city": "Panaji",
                         "state": "Goa",
-                        "code": None,
                         "location": {"latitude": 15.4909, "longitude": 73.8278},
                     },
                     "destination": {
-                        "place_id": "hub_00001",
-                        "name": "Goa International Airport",
-                        "place_type": "airport",
-                        "locality_or_city": "Vasco da Gama",
-                        "state": "Goa",
-                        "code": "GOI",
-                        "location": {"latitude": 15.3806, "longitude": 73.8327},
+                        "place_id": "karnataka_bengaluru",
+                        "name": "Bengaluru",
+                        "place_type": "city",
+                        "locality_or_city": "Bengaluru",
+                        "state": "Karnataka",
+                        "location": {"latitude": 12.9768, "longitude": 77.5901},
                     },
+                    "travel_date": "2026-08-20",
                     "recommended_mode": None,
-                    "candidates": [
-                        {
-                            "mode": "road",
-                            "status": "unavailable",
-                            "recommended": False,
-                            "safety_gate_passed": False,
-                            "feasibility_gate_passed": False,
-                            "score": None,
-                            "total_duration": None,
-                            "total_distance_km": None,
-                            "cost": None,
-                            "legs": [],
-                            "geometry": None,
-                            "warnings": [
-                                {
-                                    "code": "road_route_unavailable",
-                                    "severity": "critical",
-                                    "message": "A trustworthy road route could not be produced.",
-                                }
-                            ],
-                            "assumptions": [],
-                            "sources": [],
-                            "verification_requirements": [
-                                {
-                                    "subject": "Road route",
-                                    "required": True,
-                                    "guidance": "Verify with a trusted mapping service.",
-                                }
-                            ],
-                            "unavailable_reason": "No road-routing provider is configured",
-                        }
-                    ],
+                    "recommendation_explanation": "No trustworthy recommendation is available.",
+                    "candidates": [],
                 }
             ]
         }
     )
-
     origin: NormalizedEndpoint
     destination: NormalizedEndpoint
+    travel_date: date | None = None
     recommended_mode: JourneyMode | None
+    recommendation_explanation: str = ""
     candidates: list[JourneyCandidate]

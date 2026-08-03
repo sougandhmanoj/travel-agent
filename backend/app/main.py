@@ -6,6 +6,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import Settings, get_settings
 from app.data.places import PlaceRepository, SupabasePlaceRepository, UnavailablePlaceRepository
+from app.providers.testing import deterministic_demo_providers
+from app.providers.transit import (
+    AirServiceProvider,
+    FareEstimateProvider,
+    LocalTransferProvider,
+    RailServiceProvider,
+    UnavailableAirServiceProvider,
+    UnavailableFareEstimateProvider,
+    UnavailableLocalTransferProvider,
+    UnavailableRailServiceProvider,
+)
 from app.routing.road import RoadRoutingProvider, UnavailableRoadRoutingProvider
 from app.routing.testing import DeterministicRoadRoutingProvider
 
@@ -15,6 +26,10 @@ def create_app(
     settings: Settings | None = None,
     place_repository: PlaceRepository | None = None,
     road_provider: RoadRoutingProvider | None = None,
+    rail_provider: RailServiceProvider | None = None,
+    air_provider: AirServiceProvider | None = None,
+    local_provider: LocalTransferProvider | None = None,
+    fare_provider: FareEstimateProvider | None = None,
 ) -> FastAPI:
     active_settings = settings or get_settings()
     if place_repository is None:
@@ -35,19 +50,40 @@ def create_app(
             road_provider = DeterministicRoadRoutingProvider()
         else:
             road_provider = UnavailableRoadRoutingProvider()
+    demo_rail: RailServiceProvider
+    demo_air: AirServiceProvider
+    demo_local: LocalTransferProvider
+    demo_fares: FareEstimateProvider
+    if active_settings.multimodal_provider == "deterministic_test":
+        if active_settings.environment == "production":
+            raise RuntimeError("The deterministic test provider cannot run in production")
+        demo_rail, demo_air, demo_local, demo_fares = deterministic_demo_providers()
+    else:
+        demo_rail = UnavailableRailServiceProvider()
+        demo_air = UnavailableAirServiceProvider()
+        demo_local = UnavailableLocalTransferProvider()
+        demo_fares = UnavailableFareEstimateProvider()
+    rail_provider = rail_provider or demo_rail
+    air_provider = air_provider or demo_air
+    local_provider = local_provider or demo_local
+    fare_provider = fare_provider or demo_fares
 
     application = FastAPI(
         title=active_settings.app_name,
         description=(
             "Explanation-first journey planning for supported South Indian cities and "
-            "transport hubs. Milestone 2 exposes Road; the candidate contract is ready for "
-            "Rail and Air."
+            "transport hubs. Complete Road-, Rail-, and Flight-led educational patterns expose "
+            "their assumptions, provenance, freshness, and verification requirements."
         ),
         version=active_settings.app_version,
         debug=active_settings.debug,
     )
     application.state.place_repository = place_repository
     application.state.road_provider = road_provider
+    application.state.rail_provider = rail_provider
+    application.state.air_provider = air_provider
+    application.state.local_provider = local_provider
+    application.state.fare_provider = fare_provider
     application.add_middleware(
         CORSMiddleware,
         allow_origins=active_settings.frontend_origins,

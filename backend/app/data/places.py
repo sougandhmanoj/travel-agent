@@ -60,11 +60,15 @@ class SupabasePlaceRepository:
     def __init__(
         self,
         base_url: str,
-        api_key: str,
+        api_key: str | None,
         *,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
-        headers = {"apikey": api_key, "Authorization": f"Bearer {api_key}"}
+        headers = (
+            {"apikey": api_key, "Authorization": f"Bearer {api_key}"}
+            if api_key is not None
+            else None
+        )
         self._client = httpx.Client(
             base_url=f"{base_url.rstrip('/')}/rest/v1/",
             headers=headers,

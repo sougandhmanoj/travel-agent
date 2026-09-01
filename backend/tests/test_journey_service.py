@@ -100,17 +100,18 @@ def _candidate(response: JourneyPlanResponse, mode: JourneyMode) -> JourneyCandi
 def test_road_endpoint_combinations_and_unsourced_cab_omission(
     repository: InMemoryPlaceRepository,
 ) -> None:
-    for origin, destination, expected in [
-        ("goa_panaji", "karnataka_bengaluru", ["first_mile", "main", "last_mile"]),
-        ("goa_panaji", "hub_00001", ["first_mile", "main"]),
-        ("hub_00001", "karnataka_bengaluru", ["main", "last_mile"]),
-        ("hub_00001", "hub_00144", ["main"]),
+    for origin, destination in [
+        ("goa_panaji", "karnataka_bengaluru"),
+        ("goa_panaji", "hub_00001"),
+        ("hub_00001", "karnataka_bengaluru"),
+        ("hub_00001", "hub_00144"),
     ]:
         response = _service(repository).plan(
             JourneyPlanRequest(origin_place_id=origin, destination_place_id=destination)
         )
         road = _candidate(response, JourneyMode.ROAD)
-        assert [leg.role for leg in road.legs] == expected
+        assert [leg.role for leg in road.legs] == ["main"]
+        assert road.legs[0].instructions.startswith("Drive from ")
         assert isinstance(road.cost, RoadCostEstimates)
         assert road.cost.hired_cab_total is None
         assert any(w.code == "hired_cab_cost_unavailable" for w in road.warnings)

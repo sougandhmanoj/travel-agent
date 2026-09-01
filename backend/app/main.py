@@ -6,18 +6,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import Settings, get_settings
 from app.data.places import PlaceRepository, SupabasePlaceRepository, UnavailablePlaceRepository
+from app.providers.google_routes import GoogleRoutesRailItineraryProvider
+from app.providers.osrm import OsrmLocalTransferProvider
 from app.providers.testing import deterministic_demo_providers
 from app.providers.transit import (
     AirServiceProvider,
     FareEstimateProvider,
     LocalTransferProvider,
+    RailItineraryProvider,
     RailServiceProvider,
     UnavailableAirServiceProvider,
     UnavailableFareEstimateProvider,
     UnavailableLocalTransferProvider,
     UnavailableRailServiceProvider,
 )
-from app.routing.road import RoadRoutingProvider, UnavailableRoadRoutingProvider
+from app.routing.road import (
+    OsrmRoadRoutingProvider,
+    RoadRoutingProvider,
+    UnavailableRoadRoutingProvider,
+)
 from app.routing.testing import DeterministicRoadRoutingProvider
 
 
@@ -27,19 +34,24 @@ def create_app(
     place_repository: PlaceRepository | None = None,
     road_provider: RoadRoutingProvider | None = None,
     rail_provider: RailServiceProvider | None = None,
+    rail_itinerary_provider: RailItineraryProvider | None = None,
     air_provider: AirServiceProvider | None = None,
     local_provider: LocalTransferProvider | None = None,
     fare_provider: FareEstimateProvider | None = None,
 ) -> FastAPI:
     active_settings = settings or get_settings()
     if place_repository is None:
-        if (
-            active_settings.supabase_url is not None
-            and active_settings.supabase_service_role_key is not None
+        if active_settings.supabase_url is not None and (
+            active_settings.supabase_service_role_key is not None
+            or active_settings.environment != "production"
         ):
             place_repository = SupabasePlaceRepository(
                 str(active_settings.supabase_url),
-                active_settings.supabase_service_role_key.get_secret_value(),
+                (
+                    active_settings.supabase_service_role_key.get_secret_value()
+                    if active_settings.supabase_service_role_key is not None
+                    else None
+                ),
             )
         else:
             place_repository = UnavailablePlaceRepository()
@@ -48,6 +60,8 @@ def create_app(
             if active_settings.environment == "production":
                 raise RuntimeError("The deterministic test provider cannot run in production")
             road_provider = DeterministicRoadRoutingProvider()
+        elif active_settings.road_routing_provider == "osrm":
+            road_provider = OsrmRoadRoutingProvider(str(active_settings.osrm_base_url))
         else:
             road_provider = UnavailableRoadRoutingProvider()
     demo_rail: RailServiceProvider
@@ -63,9 +77,23 @@ def create_app(
         demo_air = UnavailableAirServiceProvider()
         demo_local = UnavailableLocalTransferProvider()
         demo_fares = UnavailableFareEstimateProvider()
+    if rail_itinerary_provider is None and active_settings.multimodal_provider == "google_routes":
+        if active_settings.google_routes_api_key is None:
+            raise RuntimeError(
+                "GOOGLE_ROUTES_API_KEY is required when MULTIMODAL_PROVIDER=google_routes"
+            )
+        rail_itinerary_provider = GoogleRoutesRailItineraryProvider(
+            active_settings.google_routes_api_key.get_secret_value(),
+            str(active_settings.google_routes_base_url),
+        )
     rail_provider = rail_provider or demo_rail
     air_provider = air_provider or demo_air
-    local_provider = local_provider or demo_local
+    if local_provider is None:
+        local_provider = (
+            OsrmLocalTransferProvider(road_provider)
+            if active_settings.road_routing_provider == "osrm"
+            else demo_local
+        )
     fare_provider = fare_provider or demo_fares
 
     application = FastAPI(
@@ -81,6 +109,7 @@ def create_app(
     application.state.place_repository = place_repository
     application.state.road_provider = road_provider
     application.state.rail_provider = rail_provider
+    application.state.rail_itinerary_provider = rail_itinerary_provider
     application.state.air_provider = air_provider
     application.state.local_provider = local_provider
     application.state.fare_provider = fare_provider

@@ -48,7 +48,9 @@ from app.providers.transit import (
     LocalTransferOption,
     LocalTransferProvider,
     ProviderSource,
+    ProviderTransitItinerary,
     ProviderUnavailableError,
+    RailItineraryProvider,
     RailServiceProvider,
     ServicePattern,
     UnavailableAirServiceProvider,
@@ -81,14 +83,6 @@ class SameEndpointError(ValueError):
     pass
 
 
-HUB_TYPES = {
-    PlaceType.AIRPORT,
-    PlaceType.RAILWAY_STATION,
-    PlaceType.BUS_TERMINAL,
-    PlaceType.METRO_STATION,
-}
-
-
 @dataclass(frozen=True)
 class PatternPath:
     services: tuple[ServicePattern, ...]
@@ -103,6 +97,7 @@ class JourneyPlanningService:
         scorer: RecommendationScorer | None = None,
         *,
         rail_provider: RailServiceProvider | None = None,
+        rail_itinerary_provider: RailItineraryProvider | None = None,
         air_provider: AirServiceProvider | None = None,
         local_provider: LocalTransferProvider | None = None,
         fare_provider: FareEstimateProvider | None = None,
@@ -110,6 +105,7 @@ class JourneyPlanningService:
         self._places = places
         self._road_provider = road_provider
         self._rail_provider = rail_provider or UnavailableRailServiceProvider()
+        self._rail_itinerary_provider = rail_itinerary_provider
         self._air_provider = air_provider or UnavailableAirServiceProvider()
         self._local_provider = local_provider or UnavailableLocalTransferProvider()
         self._fare_provider = fare_provider or UnavailableFareEstimateProvider()
@@ -127,14 +123,18 @@ class JourneyPlanningService:
             raise SameEndpointError("Origin and destination must be different places")
 
         road = self._road_candidate(origin_place, destination_place, request)
-        rail = self._transit_candidates(
-            origin_place,
-            destination_place,
-            dominant_mode=JourneyMode.RAIL,
-            travel_mode=TravelMode.RAIL,
-            hub_type=PlaceType.RAILWAY_STATION,
-            provider=self._rail_provider,
-            maximum_services=4,
+        rail = (
+            self._rail_itinerary_candidates(origin_place, destination_place, request)
+            if self._rail_itinerary_provider is not None
+            else self._transit_candidates(
+                origin_place,
+                destination_place,
+                dominant_mode=JourneyMode.RAIL,
+                travel_mode=TravelMode.RAIL,
+                hub_type=PlaceType.RAILWAY_STATION,
+                provider=self._rail_provider,
+                maximum_services=4,
+            )
         )
         flights = self._transit_candidates(
             origin_place,
@@ -164,6 +164,223 @@ class JourneyPlanningService:
             recommendation_explanation=explanation,
             candidates=response_candidates,
         )
+
+    def _rail_itinerary_candidates(
+        self,
+        origin: PlaceSummary,
+        destination: PlaceSummary,
+        request: JourneyPlanRequest,
+    ) -> list[JourneyCandidate]:
+        assert self._rail_itinerary_provider is not None
+        try:
+            itineraries = self._rail_itinerary_provider.itineraries(
+                origin, destination, request.travel_date
+            )
+            validated = [
+                ProviderTransitItinerary.model_validate(item.model_dump()) for item in itineraries
+            ]
+        except (ProviderUnavailableError, ValidationError, ValueError, AttributeError) as exc:
+            return [self._unavailable_candidate(JourneyMode.RAIL, str(exc))]
+        built = [
+            self._build_provider_itinerary_candidate(item, origin, destination, index)
+            for index, item in enumerate(validated[:4], 1)
+        ]
+        candidates = [candidate for candidate in built if candidate is not None]
+        if candidates:
+            return candidates
+        date_label = f" on {request.travel_date.isoformat()}" if request.travel_date else ""
+        return [
+            self._unavailable_candidate(
+                JourneyMode.RAIL,
+                f"The live provider returned no rail-led transit itinerary from {origin.name} "
+                f"to {destination.name}{date_label}. This does not mean that no train journey "
+                "exists.",
+            )
+        ]
+
+    def _build_provider_itinerary_candidate(
+        self,
+        itinerary: ProviderTransitItinerary,
+        origin: PlaceSummary,
+        destination: PlaceSummary,
+        index: int,
+    ) -> JourneyCandidate | None:
+        rail_indexes = [
+            position for position, item in enumerate(itinerary.legs) if item.mode == TravelMode.RAIL
+        ]
+        if not rail_indexes:
+            return None
+        first_rail = rail_indexes[0]
+        last_rail = rail_indexes[-1]
+        legs: list[JourneyLeg] = []
+        for position, item in enumerate(itinerary.legs):
+            if position < first_rail:
+                role = LegRole.FIRST_MILE
+            elif position > last_rail:
+                role = LegRole.LAST_MILE
+            elif item.mode == TravelMode.RAIL:
+                role = LegRole.MAIN
+            else:
+                role = LegRole.CONNECTION
+            legs.append(
+                JourneyLeg(
+                    leg_id=f"provider-{index}-{position + 1}",
+                    role=role,
+                    mode=item.mode,
+                    origin=JourneyPoint(
+                        name=item.origin_name,
+                        place_id=origin.place_id if position == 0 else None,
+                        location=item.origin,
+                    ),
+                    destination=JourneyPoint(
+                        name=item.destination_name,
+                        place_id=(
+                            destination.place_id if position == len(itinerary.legs) - 1 else None
+                        ),
+                        location=item.destination,
+                    ),
+                    distance_km=item.distance_km,
+                    duration=item.duration,
+                    geometry=item.geometry,
+                    instructions=item.instructions,
+                    service_name=item.service_name,
+                    service_code=item.service_code,
+                    intermediate_stops=item.intermediate_stops,
+                )
+            )
+        connections = self._provider_itinerary_connections(legs)
+        transfers = sum(item.kind == ConnectionKind.TRANSFER for item in connections)
+        mode_changes = sum(item.kind == ConnectionKind.MODE_CHANGE for item in connections)
+        station_changes = sum(item.kind == ConnectionKind.STATION_CHANGE for item in connections)
+        fare = itinerary.fare
+        return JourneyCandidate(
+            candidate_id=f"rail-live-{index}",
+            mode=JourneyMode.RAIL,
+            dominant_mode=JourneyMode.RAIL,
+            status=CandidateStatus.AVAILABLE,
+            recommended=False,
+            safety_gate_passed=True,
+            feasibility_gate_passed=True,
+            score=None,
+            total_duration=itinerary.duration,
+            total_distance_km=(
+                round(itinerary.distance_km, 1) if itinerary.distance_km is not None else None
+            ),
+            cost=JourneyCostSummary(
+                total=fare,
+                basis=CostBasis.PER_PERSON,
+                coverage=(
+                    CostCoverage.COMPLETE_ESTIMATE if fare is not None else CostCoverage.UNAVAILABLE
+                ),
+                included_legs=len(legs) if fare is not None else 0,
+                total_legs=len(legs),
+                explanation=(
+                    "The provider supplied a complete transit fare for this route."
+                    if fare is not None
+                    else "The provider did not supply a complete fare; no price was invented."
+                ),
+            ),
+            legs=legs,
+            intermediate_stops=[stop for leg in legs for stop in leg.intermediate_stops],
+            connections=connections,
+            transfer_count=transfers,
+            mode_change_count=mode_changes,
+            station_change_count=station_changes,
+            possible_wait_count=0,
+            suggested_buffer_count=0,
+            difficulty=self._difficulty(
+                transfers, station_changes, False, CandidateStatus.AVAILABLE
+            ),
+            confidence=ConfidenceLevel.MEDIUM,
+            geometry=itinerary.geometry or self._combine_geometry(legs),
+            warnings=[
+                JourneyWarning(
+                    code="live_rail_details_require_recheck",
+                    severity=WarningSeverity.CAUTION,
+                    message=(
+                        "Timetables, platforms, fares, and seat availability can change after "
+                        "this route is calculated."
+                    ),
+                )
+            ],
+            assumptions=[
+                (
+                    "The itinerary is tied to the selected date and the provider's chosen "
+                    "departure time."
+                ),
+                "A returned route confirms a transit pattern, not ticket or seat availability.",
+            ],
+            sources=self._deduplicate_sources(
+                [self._verified_places_source(), self._source_label(itinerary.source)]
+            ),
+            verification_requirements=[
+                VerificationRequirement(
+                    subject="Rail service and ticket",
+                    guidance=(
+                        "Recheck train number, operating date, departure and arrival times, "
+                        "platform, fare, and seat availability before booking."
+                    ),
+                ),
+                VerificationRequirement(
+                    subject="Every connection",
+                    guidance=(
+                        "Confirm walking paths, local transit, transfer time, accessibility, "
+                        "and the final connection before departure."
+                    ),
+                ),
+            ],
+        )
+
+    @staticmethod
+    def _provider_itinerary_connections(legs: list[JourneyLeg]) -> list[JourneyConnection]:
+        events: list[JourneyConnection] = []
+        vehicle_modes = {TravelMode.RAIL, TravelMode.METRO, TravelMode.BUS}
+        boarded = 0
+        for position, leg in enumerate(legs):
+            if leg.mode in vehicle_modes:
+                if boarded:
+                    events.append(
+                        JourneyConnection(
+                            connection_id=f"provider-transfer-{position}",
+                            kind=ConnectionKind.TRANSFER,
+                            location_name=leg.origin.name,
+                            to_leg_id=leg.leg_id,
+                            guidance=f"Board the next service at {leg.origin.name}.",
+                        )
+                    )
+                boarded += 1
+            if position == 0:
+                continue
+            previous = legs[position - 1]
+            if previous.mode != leg.mode:
+                events.append(
+                    JourneyConnection(
+                        connection_id=f"provider-mode-{position}",
+                        kind=ConnectionKind.MODE_CHANGE,
+                        location_name=leg.origin.name,
+                        from_leg_id=previous.leg_id,
+                        to_leg_id=leg.leg_id,
+                        guidance=f"Change from {previous.mode.value} to {leg.mode.value}.",
+                    )
+                )
+            if (
+                previous.mode in vehicle_modes
+                and leg.mode == TravelMode.WALKING
+                and position + 1 < len(legs)
+                and legs[position + 1].mode in vehicle_modes
+                and leg.origin.name != leg.destination.name
+            ):
+                events.append(
+                    JourneyConnection(
+                        connection_id=f"provider-station-{position}",
+                        kind=ConnectionKind.STATION_CHANGE,
+                        location_name=f"{leg.origin.name} to {leg.destination.name}",
+                        from_leg_id=previous.leg_id,
+                        to_leg_id=legs[position + 1].leg_id,
+                        guidance=leg.instructions,
+                    )
+                )
+        return events
 
     def _transit_candidates(
         self,
@@ -207,8 +424,9 @@ class JourneyPlanningService:
             return [
                 self._unavailable_candidate(
                     dominant_mode,
-                    f"No practical {dominant_mode.value.title()} pattern is supported by "
-                    "current provider data",
+                    f"The connected {dominant_mode.value.title()} provider has no verified "
+                    f"service pattern from {origin.name} to {destination.name}. This does not "
+                    f"mean that no {dominant_mode.value} journey exists.",
                 )
             ]
         return sorted(
@@ -495,8 +713,10 @@ class JourneyPlanningService:
         route_request = RoadRouteRequest(
             origin=origin,
             destination=destination,
-            require_first_mile=origin.place_type not in HUB_TYPES,
-            require_last_mile=destination.place_type not in HUB_TYPES,
+            # A Road-led option is already door-to-door. Access/egress segmentation
+            # belongs to Rail- and Air-led patterns, not to a continuous drive.
+            require_first_mile=False,
+            require_last_mile=False,
         )
         try:
             route = self._road_provider.route(route_request)
@@ -959,7 +1179,7 @@ class JourneyPlanningService:
                 maximum_minutes=max(1, ceil(base_minutes * 1.20)),
             ),
             geometry=segment.geometry,
-            instructions=f"Travel by road: {segment.origin_name} to {segment.destination_name}.",
+            instructions=f"Drive from {segment.origin_name} to {segment.destination_name}.",
         )
 
     @staticmethod
@@ -1111,14 +1331,22 @@ class JourneyPlanningService:
             for item in all_candidates
             if item.candidate_id != candidate.candidate_id and item.score
         ]
-        comparison = "among the trustworthy complete patterns"
-        if others:
-            comparison = "after balancing it against the other trustworthy complete patterns"
+        transfer_text = (
+            "no transfers"
+            if candidate.transfer_count == 0
+            else f"{candidate.transfer_count} traveller transfer"
+            if candidate.transfer_count == 1
+            else f"{candidate.transfer_count} traveller transfers"
+        )
+        if not others:
+            return (
+                f"This is currently the only complete journey supported by connected provider "
+                f"data. It has {transfer_text}; verify changing conditions before departure."
+            )
         return (
-            f"Recommended {comparison}: {candidate.transfer_count} traveller transfer(s), "
-            f"{candidate.station_change_count} station change(s), a "
-            f"{candidate.difficulty.value} pattern, and the strongest weighted combination of "
-            "structural reliability, simplicity, door-to-door time, cost, and comfort."
+            f"Recommended after comparing the supported complete journeys. It has "
+            f"{transfer_text} and the strongest overall balance of time, cost, simplicity, "
+            "and confidence."
         )
 
     @staticmethod

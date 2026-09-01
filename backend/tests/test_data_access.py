@@ -71,3 +71,17 @@ def test_supabase_repository_rejects_non_list_payload() -> None:
     )
     with pytest.raises(PlaceRepositoryError):
         repository.search("goa")
+
+
+def test_local_repository_can_query_auth_disabled_supabase_without_headers() -> None:
+    def local_handler(request: httpx.Request) -> httpx.Response:
+        assert "apikey" not in request.headers
+        assert "authorization" not in request.headers
+        return httpx.Response(200, json=[])
+
+    repository = SupabasePlaceRepository(
+        "http://127.0.0.1:54421",
+        None,
+        transport=httpx.MockTransport(local_handler),
+    )
+    assert repository.search("kannur") == []

@@ -6,7 +6,7 @@ Given From, To, and Date, the backend now constructs educational end-to-end Road
 
 ## Project status
 
-**Milestone 3 — Educational multimodal journey-pattern engine: complete**
+**Milestone 4 — Responsive frontend experience: complete**
 
 The repository now provides:
 
@@ -24,16 +24,24 @@ The repository now provides:
 - complete-itinerary recommendation scoring and position explanations
 - transparent unavailable and no-trustworthy-recommendation states
 - named OpenAPI examples for multimodal patterns, unavailable modes, and manual verification
-- 43 deterministic backend tests plus the unchanged 22-check database suite
+- 48 deterministic backend tests plus the unchanged 22-check database suite
 - the unchanged verified workbook, generated seed, database schema, stable IDs, and repeatable reset workflow
+- responsive Figma-aligned Waystory home, results, expanded-option, journey-map, saved-journey, and mobile-menu views
+- real supported-place autocomplete and API-driven planning for arbitrary supported endpoints, with a date window of today through 90 days
+- honest loading, validation, provider-error, unavailable-mode, omitted-Flight, empty-result, and missing-session states with no demo-result fallback
+- candidate-specific results and timelines derived from API legs, onboard stops, typed connections, buffers, costs/basis, warnings, assumptions, sources, freshness, and verification requirements
+- provider geometry rendering with an explicitly labelled schematic fallback when exact geometry is unavailable
+- replaceable IRCTC, Google Maps, and Ixigo handoffs; only Google Maps uses documented route prefill, while unsupported Rail/Flight prefill is explained to the traveller
+- local saved journeys and accessible keyboard/menu/combobox interactions
+- 11 deterministic frontend behavior, integration, storage, handoff, and automated accessibility checks
 
-The frontend still shows the foundation screen. Search/results cards, timeline expansion, and rendered maps begin in Milestone 4. Milestone 3 functionality is interactive through the FastAPI API and Swagger UI.
+The FastAPI API, Swagger UI, and responsive frontend are interactive locally. Deterministic demonstrations remain explicitly labelled test data and are never used as a production failure fallback.
 
 ## Product source of truth
 
 [`docs/product-and-planning-spec.md`](docs/product-and-planning-spec.md) is the source of truth for product and journey behavior. This README is the implementation and completion record.
 
-Specification version 1.1 remains unchanged in Milestone 3 because no product decision changed. The implementation was aligned to it explicitly:
+Specification version 1.2 records the agreed external verification/booking-search handoffs for the upcoming frontend milestone. Milestone 3 implementation remains unchanged; the frontend must preserve the following earlier alignment decisions:
 
 | Milestone 2 assumption/conflict | Milestone 3 resolution |
 | --- | --- |
@@ -238,12 +246,13 @@ npm run db:start
 npx supabase status -o env
 ```
 
-Copy the local API URL and service-role key into `backend/.env`. Keep service-role credentials only in the backend environment; never use a `VITE_*` variable.
+Copy the local API URL into `backend/.env`. This repository's local Supabase stack has auth disabled, so local development does not require an API key.
 
 ```dotenv
 SUPABASE_URL=http://127.0.0.1:54421
-SUPABASE_SERVICE_ROLE_KEY=the-local-SERVICE_ROLE_KEY-value
 ```
+
+Production Supabase projects still require `SUPABASE_SERVICE_ROLE_KEY`. Keep that credential only in the backend environment; never use a `VITE_*` variable.
 
 ### Start the backend
 
@@ -262,6 +271,29 @@ ENVIRONMENT=development
 ROAD_ROUTING_PROVIDER=deterministic_test
 MULTIMODAL_PROVIDER=deterministic_test
 ```
+
+For arbitrary real place searches, use OSRM road routing and keep the small multimodal fixture disabled:
+
+```dotenv
+ENVIRONMENT=development
+ROAD_ROUTING_PROVIDER=osrm
+OSRM_BASE_URL=https://router.project-osrm.org
+MULTIMODAL_PROVIDER=unavailable
+```
+
+This produces one continuous, named road leg with routed road geometry. The public OSRM service is suitable only for local evaluation; deploy a licensed or self-hosted routing service before production. Rail and Flight remain explicitly unavailable unless a verified service-information provider is connected—the app does not infer services from nearby hubs or straight lines.
+
+For date-specific Rail results, enable Google Maps Routes API in a billing-enabled Google Cloud project, restrict a server API key to that API and the backend's deployment IPs, then restart with:
+
+```dotenv
+ENVIRONMENT=development
+ROAD_ROUTING_PROVIDER=osrm
+OSRM_BASE_URL=https://router.project-osrm.org
+MULTIMODAL_PROVIDER=google_routes
+GOOGLE_ROUTES_API_KEY=replace-with-server-only-google-maps-key
+```
+
+The key stays on the backend and must never use a `VITE_*` name. The adapter requests date-specific transit alternatives and accepts only itineraries containing a provider-declared Rail vehicle segment. It preserves named services/stops, individual step geometry, complete-route geometry, duration, and a provider fare when supplied. Bus-only or walking-only results are rejected instead of being labelled Rail. Google Maps attribution is shown with Google-sourced route geometry. The selected date must remain inside the app's 90-day planning window and Google's supported transit time window.
 
 These fixtures are repeatable demonstrations, not live route, schedule, halt, fare, availability, or connection data. Open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
 
@@ -284,7 +316,7 @@ With local Supabase and both deterministic flags enabled:
 7. Disable `ROAD_ROUTING_PROVIDER` too to inspect the no-trustworthy-recommendation response.
 8. Try malformed, unknown, identical, past-date, and more-than-90-days-ahead requests for 422/404/409 handling.
 
-There is no complete visual results page or rendered map yet. Multi-service and station-change scenarios are covered by deterministic automated fixtures; the small interactive catalog deliberately demonstrates only two direct provider patterns.
+The complete visual flow is available through the frontend. For a deliberately opt-in UI preview without claiming live data, open `http://127.0.0.1:5173/results?preview=1` while the Vite development server is running. The preview is development-only and visibly labelled. Multi-service and station-change scenarios remain covered by deterministic automated fixtures; the small interactive provider catalog deliberately demonstrates only two direct patterns.
 
 ## Validation commands
 
@@ -334,7 +366,7 @@ Pre-change baseline:
 
 Final results:
 
-- `npm run backend:check`: Ruff passed; strict MyPy passed; Pytest 43/43 passed
+- `npm run backend:check`: Ruff passed; strict MyPy passed; Pytest 53/53 passed
 - `npm run frontend:check`: ESLint passed; TypeScript passed; production Vite build passed
 - `npm run db:reset`: migration and atomic verified-workbook seed passed
 - `npm run db:test`: pgTAP 22/22 passed
@@ -343,9 +375,9 @@ Final results:
 
 ## Known data limitations and required verification
 
-- No live Rail, Air, local-transport, routing, toll, or fare vendor is integrated by default.
+- Live Rail is available when the licensed Google Maps Routes API adapter and server key are configured. It is intentionally unavailable by default; Air remains unconnected.
 - The opt-in fixture catalog is test data. Its durations, service labels, and fares must never be treated as operational facts.
-- Service patterns do not assert operation on the selected date, exact departures/arrivals, exact halts, platforms, seats, delays, cancellations, or successful connections.
+- Google Rail results are date-specific provider itineraries, but still do not assert seat availability, platforms, delays, cancellations, or successful connections. Deterministic fixture patterns do not assert operation on the selected date.
 - The engine trusts provider-declared freshness status; production adapter freshness thresholds and licensing must be researched before integration.
 - General connection and check-in buffers are configurable guidance, not guarantees.
 - Walking feasibility is distance-based and still requires accessibility/pedestrian-route verification.
@@ -356,24 +388,36 @@ Final results:
 - No live cab quote provider is configured; hired-cab cost is normally unavailable.
 - Route/service geometry is returned only when a provider supplies it.
 - Before booking or departure, travellers must verify services, timings, stops, fares, seat availability, local transfers, buffers, traffic, accessibility, and disruptions through official or trustworthy sources.
+- The frontend hands verification actions to IRCTC, Google Maps, or Ixigo with route/date context prefilled only where the provider's supported URL/deep-link scheme permits. This is an external handoff, not in-app booking.
 
-## Milestone 4 handoff
+## Milestone 4 completion evidence
 
-**Next milestone: Frontend experience**
+Completed on 1 September 2026.
 
-Start Milestone 4 with:
+Final results:
 
-> Read the root README.md and docs/product-and-planning-spec.md completely before planning or changing code. Treat the product specification as the source of truth for journey behavior and README.md as the implementation/completion record. Run all current backend, frontend, database, and schema validation commands before making changes. Identify any conflict between the Milestone 3 implementation and product specification version 1.1 before proceeding. Implement the responsive, accessible search and results experience on top of the existing multimodal API: From/To autocomplete, Date limited to 90 days, loading/error/empty states, one Recommended card shown once, Rail alternative or “No Rail options available,” Road alternative, Flight only when returned, progressive timeline details, explicit onboard stops versus transfers/mode/station changes/waits/buffers, cost basis and partial/unavailable states, difficulty/confidence, warnings, provenance/freshness, verification guidance, and route geometry on a map when available. Preserve all stable IDs, API trust language, deterministic testing, verified workbook/import/reset workflow, and server-only credentials. Do not add booking, accounts, affiliate links, live tracking, unsupported operational claims, or deployment. Add comprehensive frontend unit/integration/accessibility/responsive tests, run every validation command, update README completion evidence and the Milestone 5 handoff, and update the product specification only if an agreed product decision changes.
+- `npm run backend:check`: Ruff passed; strict MyPy passed; Pytest 48/48 passed
+- `npm run frontend:check`: ESLint passed; TypeScript passed; Vitest 12/12 passed; production Vite build passed
+- `npm run db:verify`: reset/migration/seed passed; pgTAP 22/22 passed; schema lint reported no warnings or errors
+- browser verification at the mobile product width: home, results, expansion, sticky selection, journey navigation, first/last timeline highlighting, API error copy, and no horizontal overflow passed
+- Google Maps directions URL parameters were checked against current official Maps URL documentation; no supported stable IRCTC or Ixigo prefill contract was found, so those adapters deliberately use an explicit manual-search fallback
+- workbook, migration, seed, backend contracts, and all 658 stable place IDs remain unchanged
 
-Milestone 4 must not collapse complete itineraries into isolated mode cards or imply that fixture/general planning information is live.
+## Milestone 5 handoff
+
+**Next milestone: Trust and operations**
+
+Start Milestone 5 with:
+
+> Read README.md and docs/product-and-planning-spec.md completely and run all backend, frontend, database, and schema checks before changing code. Preserve the completed responsive frontend, stable IDs, complete-itinerary semantics, deterministic test boundaries, server-only credentials, and honest unavailable/error states. Define and implement production provider freshness thresholds, cache and retry policy, rate limits, structured observability, privacy-safe analytics, outage/degradation behavior, operational runbooks, and measurable trust/usability events. Research and document vendor licensing, attribution, supported deep-link contracts, and data-retention constraints before connecting any live provider. Do not add deployment, accounts, payments, affiliate links, in-app booking, unsupported live claims, or silent fixture fallback. Expand automated tests for stale data, partial outages, rate limits, analytics privacy, and adapter failures; run every validation command and update the completion record and Milestone 6 handoff.
 
 ## Six-milestone roadmap
 
 1. **Foundations — complete:** environments, schema, verified import, integrity checks.
 2. **Backend vertical slice — complete:** place search, Road plan, contracts, scoring shell.
 3. **Multimodal engine — complete:** Rail/Air patterns, local transfers, buffers, gates, complete-itinerary scoring, fallbacks.
-4. **Frontend experience — next:** search, result cards, detail timeline, map, responsive states, accessibility.
-5. **Trust and operations:** freshness policies, disclaimers, rate limits, analytics, outage behavior.
+4. **Frontend experience — complete:** search, result cards, detail timeline, map, responsive states, accessibility, saved journeys, and replaceable external verification handoffs.
+5. **Trust and operations — next:** freshness policies, disclaimers, rate limits, privacy-safe analytics, observability, and outage behavior.
 6. **Pilot launch:** deployment, moderated usability tests, blocking fixes.
 
 ### Dependency security note

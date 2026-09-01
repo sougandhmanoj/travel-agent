@@ -2,9 +2,9 @@
 
 **Status:** Product source of truth
 
-**Version:** 1.1
+**Version:** 1.2
 
-**Agreed:** 2 August 2026
+**Agreed:** 31 August 2026
 
 ## How to use this document
 
@@ -43,12 +43,13 @@ Accessibility, luggage, family, elderly-traveller, overnight-avoidance, and othe
 - General planning estimates and practical route patterns
 - Practical alternatives and one clearly Recommended journey
 - Explanation of likely transfers, station changes, difficulty, assumptions, sources, and what the traveller must verify
+- External verification and booking-search handoffs that pass supported route/date context to IRCTC, Google Maps, or Ixigo
 
 ### Excluded for now
 
 - Journeys with either endpoint outside the four supported states
 - Return/multi-city journey planning
-- Booking, payments, accounts, or live tracking
+- In-app booking, payments, accounts, or live tracking
 - Affiliate links; these may be introduced later as a business feature
 - Exact halt, layover, or date-specific connection calculation
 - Live train/flight cancellation and delay response
@@ -67,6 +68,25 @@ The MVP asks for only:
 Users may select a supported city/locality, metro station, railway station, airport, or bus terminal. Most searches are expected to be city-to-city.
 
 The selected date is retained as journey context and for future schedule-aware functionality. In the MVP, it does not guarantee that a particular service operates or that a connection is available on that date. The result must tell the user to verify services, timings, and connections before booking or departure.
+
+## External verification and booking-search handoffs
+
+The MVP does not book travel inside Waystory. Its sticky verification actions open an external provider with as much selected itinerary context as that provider's current supported URL/deep-link scheme permits.
+
+- **Verify the train / Check availability:** open IRCTC with the selected origin station, destination station, and travel date prefilled. The traveller should need only to review the values and run the search.
+- **Check train status:** open the appropriate IRCTC train lookup/status experience with the selected train or route context and travel date prefilled when supported.
+- **Check live traffic:** open Google Maps directions for the relevant Road leg with origin and destination—and useful route waypoints when appropriate—already supplied. Use driving directions so Google Maps can show its current traffic-aware route and duration.
+- **Check flight status:** open Ixigo for the MVP with the selected departure airport, arrival airport, and travel date prefilled. The traveller should need only to run the search. The provider may be replaced later.
+
+Implementation rules:
+
+- Build outbound links from the user's selected itinerary, not from hardcoded Kochi–Madurai demonstration values.
+- URL-encode every external parameter and open the provider in a new browser tab or the device's external browser.
+- Send only journey context required for the handoff: route endpoints, station/airport codes, date, and a train/flight identifier when relevant. Do not include personal data.
+- Keep provider URL construction behind a replaceable frontend adapter rather than scattering provider-specific URLs through components.
+- Verify the provider's current supported URL/deep-link format during implementation. Do not automate or scrape third-party form DOMs and do not claim fields are prefilled when the provider does not support it.
+- If a provider cannot accept the required prefill, show the route/date clearly before handoff and use an explicit fallback rather than failing silently.
+- External providers remain responsible for schedules, availability, fares, traffic, booking, authentication, and payment. Waystory must continue to show its verification disclaimer.
 
 ## Journey model
 
@@ -348,7 +368,7 @@ Every pilot journey must be checked against published sources. The product succe
 
 ## Future business direction
 
-Booking is outside the MVP. Train and flight booking links, commercial partnerships, and affiliate links may be explored later. Commercial ranking must never silently override traveller ease, feasibility, or trust.
+In-app booking, payments, commercial partnerships, and affiliate links remain outside the MVP. External verification and booking-search handoffs are included as defined above. Commercial ranking must never silently override traveller ease, feasibility, or trust.
 
 ## Required milestone startup instruction
 

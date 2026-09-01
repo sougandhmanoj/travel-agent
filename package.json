@@ -6,7 +6,7 @@
     "backend:check": "cd backend && .venv/bin/ruff check . && .venv/bin/mypy app tests && .venv/bin/pytest",
     "frontend:dev": "npm --prefix frontend run dev",
     "frontend:build": "npm --prefix frontend run build",
-    "frontend:check": "npm --prefix frontend run lint && npm --prefix frontend run typecheck && npm --prefix frontend run build",
+    "frontend:check": "npm --prefix frontend run lint && npm --prefix frontend run typecheck && npm --prefix frontend run test && npm --prefix frontend run build",
     "data:seed": "node scripts/generate_supabase_seed.mjs",
     "db:start": "npx supabase start",
     "db:stop": "npx supabase stop",

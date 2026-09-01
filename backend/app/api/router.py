@@ -10,6 +10,7 @@ from app.providers.transit import (
     AirServiceProvider,
     FareEstimateProvider,
     LocalTransferProvider,
+    RailItineraryProvider,
     RailServiceProvider,
 )
 from app.routing.road import RoadRoutingProvider
@@ -96,6 +97,10 @@ def get_rail_provider(request: Request) -> RailServiceProvider:
     return request.app.state.rail_provider  # type: ignore[no-any-return]
 
 
+def get_rail_itinerary_provider(request: Request) -> RailItineraryProvider | None:
+    return request.app.state.rail_itinerary_provider  # type: ignore[no-any-return]
+
+
 def get_air_provider(request: Request) -> AirServiceProvider:
     return request.app.state.air_provider  # type: ignore[no-any-return]
 
@@ -180,6 +185,9 @@ def plan_journey(
     repository: Annotated[PlaceRepository, Depends(get_place_repository)],
     road_provider: Annotated[RoadRoutingProvider, Depends(get_road_provider)],
     rail_provider: Annotated[RailServiceProvider, Depends(get_rail_provider)],
+    rail_itinerary_provider: Annotated[
+        RailItineraryProvider | None, Depends(get_rail_itinerary_provider)
+    ],
     air_provider: Annotated[AirServiceProvider, Depends(get_air_provider)],
     local_provider: Annotated[LocalTransferProvider, Depends(get_local_provider)],
     fare_provider: Annotated[FareEstimateProvider, Depends(get_fare_provider)],
@@ -189,6 +197,7 @@ def plan_journey(
             repository,
             road_provider,
             rail_provider=rail_provider,
+            rail_itinerary_provider=rail_itinerary_provider,
             air_provider=air_provider,
             local_provider=local_provider,
             fare_provider=fare_provider,

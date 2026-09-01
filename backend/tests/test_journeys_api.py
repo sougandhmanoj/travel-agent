@@ -24,10 +24,10 @@ def test_plan_endpoint_returns_extensible_road_candidate(client: TestClient) -> 
     assert payload["recommended_mode"] == "road"
     assert payload["origin"]["place_type"] == "city"
     assert payload["destination"]["place_type"] == "airport"
-    assert [leg["role"] for leg in payload["candidates"][0]["legs"]] == [
-        "first_mile",
-        "main",
-    ]
+    assert [leg["role"] for leg in payload["candidates"][0]["legs"]] == ["main"]
+    assert payload["candidates"][0]["legs"][0]["instructions"] == (
+        "Drive from Panaji to Goa International Airport."
+    )
 
 
 def test_invalid_place_id_shape_is_rejected(client: TestClient) -> None:

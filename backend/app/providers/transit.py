@@ -80,12 +80,52 @@ class FareEstimate(BaseModel):
     source: ProviderSource
 
 
+class ProviderItineraryLeg(BaseModel):
+    """One provider-returned leg in a date-specific, complete transit itinerary."""
+
+    model_config = ConfigDict(frozen=True)
+    mode: TravelMode
+    origin_name: str = Field(min_length=1)
+    destination_name: str = Field(min_length=1)
+    origin: Coordinates
+    destination: Coordinates
+    duration: DurationRange
+    distance_km: float | None = Field(default=None, gt=0)
+    instructions: str = Field(min_length=1)
+    geometry: RouteGeometry | None = None
+    service_name: str | None = None
+    service_code: str | None = None
+    intermediate_stops: list[IntermediateStop] = Field(default_factory=list)
+
+
+class ProviderTransitItinerary(BaseModel):
+    """A date-specific door-to-door itinerary returned by a licensed provider."""
+
+    model_config = ConfigDict(frozen=True)
+    itinerary_id: str = Field(min_length=1)
+    legs: list[ProviderItineraryLeg] = Field(min_length=1)
+    duration: DurationRange
+    distance_km: float | None = Field(default=None, gt=0)
+    geometry: RouteGeometry | None = None
+    fare: CostRange | None = None
+    source: ProviderSource
+
+
 class ProviderUnavailableError(RuntimeError):
     """The provider failed or cannot supply defensible data."""
 
 
 class RailServiceProvider(Protocol):
     def services_from(self, hub_id: str) -> list[ServicePattern]: ...
+
+
+class RailItineraryProvider(Protocol):
+    def itineraries(
+        self,
+        origin: PlaceSummary,
+        destination: PlaceSummary,
+        travel_date: date | None,
+    ) -> list[ProviderTransitItinerary]: ...
 
 
 class AirServiceProvider(Protocol):
@@ -105,13 +145,19 @@ class FareEstimateProvider(Protocol):
 class UnavailableRailServiceProvider:
     def services_from(self, hub_id: str) -> list[ServicePattern]:
         del hub_id
-        raise ProviderUnavailableError("No Rail service-information provider is configured")
+        raise ProviderUnavailableError(
+            "Rail service data is not connected, so Waystory cannot verify a rail itinerary "
+            "for this route yet. This does not mean that no train journey exists."
+        )
 
 
 class UnavailableAirServiceProvider:
     def services_from(self, hub_id: str) -> list[ServicePattern]:
         del hub_id
-        raise ProviderUnavailableError("No Air service-information provider is configured")
+        raise ProviderUnavailableError(
+            "Flight service data is not connected, so Waystory cannot verify a flight "
+            "itinerary for this route yet."
+        )
 
 
 class UnavailableLocalTransferProvider:

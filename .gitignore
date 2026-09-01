@@ -51,6 +51,11 @@ pnpm-debug.log*
 *.swp
 *.swo
 
+# Local Figma references, generated plugins, previews, and export packages.
+# The production frontend keeps only the runtime assets copied into frontend/public.
+/Figma designs/
+/figma-plugin/
+
 # Supabase local runtime
 supabase/.branches/
 supabase/.temp/

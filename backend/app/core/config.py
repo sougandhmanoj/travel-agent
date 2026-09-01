@@ -16,14 +16,24 @@ class Settings(BaseSettings):
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
 
-    frontend_origins: list[str] = ["http://localhost:5173"]
+    frontend_origins: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5175",
+        "http://127.0.0.1:5175",
+    ]
 
     # These values are consumed only by the backend process. Never expose the
     # service-role key through a VITE_* variable or browser bundle.
     supabase_url: AnyHttpUrl | None = None
     supabase_service_role_key: SecretStr | None = None
-    road_routing_provider: Literal["unavailable", "deterministic_test"] = "unavailable"
-    multimodal_provider: Literal["unavailable", "deterministic_test"] = "unavailable"
+    road_routing_provider: Literal["unavailable", "deterministic_test", "osrm"] = "unavailable"
+    osrm_base_url: AnyHttpUrl = "https://router.project-osrm.org"  # type: ignore[assignment]
+    multimodal_provider: Literal["unavailable", "deterministic_test", "google_routes"] = (
+        "unavailable"
+    )
+    google_routes_api_key: SecretStr | None = None
+    google_routes_base_url: AnyHttpUrl = "https://routes.googleapis.com"  # type: ignore[assignment]
 
     model_config = SettingsConfigDict(
         env_file=".env",

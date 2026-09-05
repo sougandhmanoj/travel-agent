@@ -27,13 +27,17 @@ class Settings(BaseSettings):
     # service-role key through a VITE_* variable or browser bundle.
     supabase_url: AnyHttpUrl | None = None
     supabase_service_role_key: SecretStr | None = None
-    road_routing_provider: Literal["unavailable", "deterministic_test", "osrm"] = "unavailable"
+    road_routing_provider: Literal[
+        "unavailable", "deterministic_test", "osrm", "google_routes"
+    ] = "unavailable"
     osrm_base_url: AnyHttpUrl = "https://router.project-osrm.org"  # type: ignore[assignment]
-    multimodal_provider: Literal["unavailable", "deterministic_test", "google_routes"] = (
-        "unavailable"
-    )
+    multimodal_provider: Literal[
+        "unavailable", "deterministic_test", "google_routes", "railradar"
+    ] = "unavailable"
     google_routes_api_key: SecretStr | None = None
     google_routes_base_url: AnyHttpUrl = "https://routes.googleapis.com"  # type: ignore[assignment]
+    railradar_api_key: SecretStr | None = None
+    railradar_base_url: AnyHttpUrl = "https://api.railradar.in/v1"  # type: ignore[assignment]
 
     model_config = SettingsConfigDict(
         env_file=".env",

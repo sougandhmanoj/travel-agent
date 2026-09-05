@@ -20,6 +20,13 @@ function dynamicPlan(): JourneyPlan {
   const recommended = plan.candidates[0];
   recommended.candidate_id = "live-recommended";
   recommended.legs[0].origin.name = "Kannur";
+  const railLeg = recommended.legs.find((leg) => leg.mode === "rail");
+  if (railLeg) {
+    railLeg.instructions = "Board train 22633, Trivandrum Central - Hazrat Nizamuddin SF Express, at Kannur at 23:40; remain onboard to Madgaon Junction, arriving at 07:50.";
+    railLeg.service_name = "Trivandrum Central - Hazrat Nizamuddin SF Express";
+    railLeg.service_code = "22633";
+    railLeg.destination.name = "Madgaon Junction";
+  }
   recommended.legs[0].intermediate_stops = [{ name: "Thalassery", guidance: "Remain onboard." }];
   recommended.connections = [{ connection_id: "change-1", kind: "mode_change", location_name: "Ernakulam Junction", from_leg_id: recommended.legs[0].leg_id, to_leg_id: recommended.legs[1].leg_id, duration: { minimum_minutes: 15, maximum_minutes: 25 }, guidance: "Walk to the confirmed platform." }];
   const road = plan.candidates[1];
@@ -117,6 +124,8 @@ describe("Waystory frontend", () => {
     renderApp();
     expect(screen.getByRole("img", { name: "Journey route with schematic sections" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Thalassery" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Train 22633 to Madgaon Junction" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /Trivandrum Central/i })).not.toBeInTheDocument();
     expect(screen.getByText("Walk to the confirmed platform.")).toBeInTheDocument();
     expect(screen.getByText(/IRCTC does not publish a stable supported prefill URL/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save journey" }));

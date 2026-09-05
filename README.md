@@ -281,9 +281,34 @@ OSRM_BASE_URL=https://router.project-osrm.org
 MULTIMODAL_PROVIDER=unavailable
 ```
 
-This produces one continuous, named road leg with routed road geometry. The public OSRM service is suitable only for local evaluation; deploy a licensed or self-hosted routing service before production. Rail and Flight remain explicitly unavailable unless a verified service-information provider is connected—the app does not infer services from nearby hubs or straight lines.
+This produces one continuous, named road leg with routed road geometry. The public OSRM service is suitable only for local evaluation; deploy a licensed or self-hosted routing service before production. Flight remains explicitly unavailable unless a verified service-information provider is connected—the app does not infer services from nearby hubs or straight lines.
 
-For date-specific Rail results, enable Google Maps Routes API in a billing-enabled Google Cloud project, restrict a server API key to that API and the backend's deployment IPs, then restart with:
+For traffic-aware Road duration and geometry, use the same server-side Google Routes key. Google supplies the displayed distance and traffic-aware duration; OSRM is consulted only if Google omits usable route geometry, and OSRM timing is never substituted:
+
+```dotenv
+ENVIRONMENT=development
+ROAD_ROUTING_PROVIDER=google_routes
+GOOGLE_ROUTES_API_KEY=replace-with-server-only-google-maps-key
+GOOGLE_ROUTES_BASE_URL=https://routes.googleapis.com
+OSRM_BASE_URL=https://router.project-osrm.org
+```
+
+For today's journey the adapter requests traffic approximately five minutes from now. Because the current form collects a date but no departure time, future dates use 08:00 Asia/Kolkata as a disclosed morning-planning assumption.
+
+For date-specific Indian Rail results, use a server-side RailRadar key and restart:
+
+```dotenv
+ENVIRONMENT=development
+ROAD_ROUTING_PROVIDER=osrm
+OSRM_BASE_URL=https://router.project-osrm.org
+MULTIMODAL_PROVIDER=railradar
+RAILRADAR_API_KEY=replace-with-server-only-railradar-key
+RAILRADAR_BASE_URL=https://api.railradar.in/v1
+```
+
+The RailRadar adapter resolves endpoints to verified station codes, filters trains by the selected operating day, and chooses one practical direct service. It returns the train number, name, station times, duration, distance, a class-appropriate general-quota fare when available, and railway-line geometry trimmed to the boarding and arrival stations. OSRM supplies real first- and last-mile road legs for non-station endpoints. Provider failures and missing data remain explicit; the app never substitutes a straight line or fabricates a train.
+
+Google Maps Routes remains an optional transit adapter. Enable Routes API in a billing-enabled Google Cloud project, restrict a server API key to that API and the backend's deployment IPs, then restart with:
 
 ```dotenv
 ENVIRONMENT=development
@@ -315,6 +340,8 @@ With local Supabase and both deterministic flags enabled:
 6. Disable `MULTIMODAL_PROVIDER` to inspect “No Rail options available” and Flight omission without fabricated filler.
 7. Disable `ROAD_ROUTING_PROVIDER` too to inspect the no-trustworthy-recommendation response.
 8. Try malformed, unknown, identical, past-date, and more-than-90-days-ahead requests for 422/404/409 handling.
+
+With `MULTIMODAL_PROVIDER=railradar`, plan Kannur Station (`hub_00435`) → Ernakulam Town (`hub_00455`) to verify a date-running named train, ticket fare, recommendation scoring, and curved railway geometry. Selecting Kannur city (`kerala_kannur`) instead also verifies the named city-centre-to-station road access leg.
 
 The complete visual flow is available through the frontend. For a deliberately opt-in UI preview without claiming live data, open `http://127.0.0.1:5173/results?preview=1` while the Vite development server is running. The preview is development-only and visibly labelled. Multi-service and station-change scenarios remain covered by deterministic automated fixtures; the small interactive provider catalog deliberately demonstrates only two direct patterns.
 

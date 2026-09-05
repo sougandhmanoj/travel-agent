@@ -67,7 +67,7 @@ export function candidateSummary(candidate: Candidate) {
 }
 
 export function legDetail(leg: JourneyLeg, candidate?: Candidate) {
-  const service = [leg.service_name, leg.service_code].filter(Boolean).join(" · ");
+  const service = leg.mode === "rail" ? null : [leg.service_name, leg.service_code].filter(Boolean).join(" · ");
   const roadCost = candidate?.mode === "road" && candidate.legs.length === 1 ? candidate.cost?.self_drive_total : null;
   const cost = leg.cost
     ? `${formatCostRange(leg.cost.range)} ${leg.cost.basis === "per_vehicle" ? "per vehicle" : "per person"}`
@@ -75,6 +75,25 @@ export function legDetail(leg: JourneyLeg, candidate?: Candidate) {
       ? `${formatCostRange(roadCost)} self-drive per vehicle`
       : null;
   return [formatDuration(leg.duration, true), service, cost].filter(Boolean).join(" · ");
+}
+
+export function legStepTitle(leg: JourneyLeg) {
+  const code = leg.service_code ? ` ${leg.service_code}` : "";
+  if (leg.mode === "rail") return `Train${code} to ${leg.destination.name}`;
+  if (leg.mode === "air") return `Flight${code} to ${leg.destination.name}`;
+  if (leg.mode === "road") return `Drive to ${leg.destination.name}`;
+  if (leg.mode === "auto_cab") return `Cab to ${leg.destination.name}`;
+  if (leg.mode === "walking") return `Walk to ${leg.destination.name}`;
+  if (leg.mode === "bus") return `Bus to ${leg.destination.name}`;
+  if (leg.mode === "metro") return `Metro to ${leg.destination.name}`;
+  return leg.instructions || `${leg.origin.name} to ${leg.destination.name}`;
+}
+
+export function legSupportingDetail(leg: JourneyLeg) {
+  const service = leg.mode !== "rail" && leg.service_name
+    ? `Service: ${leg.service_name}${leg.service_code ? ` (${leg.service_code})` : ""}`
+    : null;
+  return [service, `${leg.origin.name} → ${leg.destination.name}`].filter(Boolean).join(" · ");
 }
 
 export function routeTitle(plan: JourneyPlan) { return `${plan.origin.name} → ${plan.destination.name}`; }

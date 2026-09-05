@@ -1,3 +1,5 @@
+from datetime import date
+
 from app.data.places import InMemoryPlaceRepository
 from app.models import (
     CandidateStatus,
@@ -34,6 +36,16 @@ class IncompleteProvider:
         return RoadRoute.model_construct(
             provider_id="broken", provider_label="Broken provider fixture", segments=[]
         )
+
+
+class CapturingRoadProvider:
+    def __init__(self) -> None:
+        self.request: RoadRouteRequest | None = None
+        self._delegate = DeterministicRoadRoutingProvider()
+
+    def route(self, request: RoadRouteRequest) -> RoadRoute:
+        self.request = request
+        return self._delegate.route(request)
 
 
 def _pattern(
@@ -115,6 +127,23 @@ def test_road_endpoint_combinations_and_unsourced_cab_omission(
         assert isinstance(road.cost, RoadCostEstimates)
         assert road.cost.hired_cab_total is None
         assert any(w.code == "hired_cab_cost_unavailable" for w in road.warnings)
+
+
+def test_selected_date_is_passed_to_road_provider(
+    repository: InMemoryPlaceRepository,
+) -> None:
+    provider = CapturingRoadProvider()
+    service = JourneyPlanningService(repository, provider)
+    selected_date = date.today()
+    service.plan(
+        JourneyPlanRequest(
+            origin_place_id="goa_panaji",
+            destination_place_id="karnataka_bengaluru",
+            travel_date=selected_date,
+        )
+    )
+    assert provider.request is not None
+    assert provider.request.travel_date == selected_date
 
 
 def test_road_includes_hired_cab_only_from_sourced_per_vehicle_fare(

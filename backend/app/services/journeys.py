@@ -270,12 +270,24 @@ class JourneyPlanningService:
                 total=fare,
                 basis=CostBasis.PER_PERSON,
                 coverage=(
-                    CostCoverage.COMPLETE_ESTIMATE if fare is not None else CostCoverage.UNAVAILABLE
+                    CostCoverage.COMPLETE_ESTIMATE
+                    if fare is not None and itinerary.fare_is_complete
+                    else CostCoverage.PARTIAL_ESTIMATE
+                    if fare is not None
+                    else CostCoverage.UNAVAILABLE
                 ),
-                included_legs=len(legs) if fare is not None else 0,
+                included_legs=(
+                    len(legs)
+                    if fare is not None and itinerary.fare_is_complete
+                    else sum(leg.mode == TravelMode.RAIL for leg in legs)
+                    if fare is not None
+                    else 0
+                ),
                 total_legs=len(legs),
                 explanation=(
                     "The provider supplied a complete transit fare for this route."
+                    if fare is not None and itinerary.fare_is_complete
+                    else "The provider fare covers the rail ticket; local transfers are excluded."
                     if fare is not None
                     else "The provider did not supply a complete fare; no price was invented."
                 ),
@@ -717,20 +729,24 @@ class JourneyPlanningService:
             # belongs to Rail- and Air-led patterns, not to a continuous drive.
             require_first_mile=False,
             require_last_mile=False,
+            travel_date=request.travel_date,
         )
         try:
             route = self._road_provider.route(route_request)
             self._validate_route(route, route_request)
         except (RoadRoutingError, ValueError, ValidationError) as exc:
             return self._unavailable_candidate(JourneyMode.ROAD, str(exc))
-        legs = [
-            self._build_road_leg(index, segment) for index, segment in enumerate(route.segments, 1)
-        ]
         total_metres = sum(segment.distance_metres for segment in route.segments)
         total_seconds = sum(segment.duration_seconds for segment in route.segments)
+        traffic_aware = route.provider_id == "google_maps_routes_road"
+        uncertainty_multiplier = 1.10 if traffic_aware else 1.20
+        legs = [
+            self._build_road_leg(index, segment, uncertainty_multiplier)
+            for index, segment in enumerate(route.segments, 1)
+        ]
         duration = DurationRange(
             minimum_minutes=max(1, floor(total_seconds / 60)),
-            maximum_minutes=max(1, ceil(total_seconds * 1.20 / 60)),
+            maximum_minutes=max(1, ceil(total_seconds * uncertainty_multiplier / 60)),
         )
         distance = round(total_metres / 1000, 1)
         cab_fare: FareEstimate | None = None
@@ -793,8 +809,13 @@ class JourneyPlanningService:
             geometry=self._combine_geometry(legs),
             warnings=warnings,
             assumptions=[
-                "The upper time range adds 20% general road uncertainty, not a "
-                "connection calculation.",
+                (
+                    "Google Maps Routes provides the traffic-aware base time for the selected "
+                    "date; the upper range adds 10% general road uncertainty."
+                    if traffic_aware
+                    else "The base time comes from the configured road provider for the selected "
+                    "date; the upper range adds 20% general road uncertainty."
+                ),
                 "Fuel values are indicative planning estimates, not live prices or quotes.",
                 "The request represents travel between the verified endpoint coordinates.",
             ],
@@ -805,7 +826,13 @@ class JourneyPlanningService:
                         source_id=route.provider_id,
                         kind=SourceKind.ROUTING_PROVIDER,
                         label=route.provider_label,
-                        detail="Road distance, base duration, geometry, and supplied tolls.",
+                        detail=(
+                            "Traffic-aware road distance, duration, and geometry returned by "
+                            "Google Maps."
+                            if traffic_aware
+                            else "Road distance, base duration, geometry, and supplied tolls."
+                        ),
+                        freshness=route.freshness,
                     ),
                     SourceLabel(
                         source_id="road_fuel_model_v2",
@@ -1165,7 +1192,11 @@ class JourneyPlanningService:
         )
 
     @staticmethod
-    def _build_road_leg(index: int, segment: RoadRouteSegment) -> JourneyLeg:
+    def _build_road_leg(
+        index: int,
+        segment: RoadRouteSegment,
+        uncertainty_multiplier: float = 1.20,
+    ) -> JourneyLeg:
         base_minutes = segment.duration_seconds / 60
         return JourneyLeg(
             leg_id=f"road-{index}",
@@ -1176,7 +1207,7 @@ class JourneyPlanningService:
             distance_km=round(segment.distance_metres / 1000, 1),
             duration=DurationRange(
                 minimum_minutes=max(1, floor(base_minutes)),
-                maximum_minutes=max(1, ceil(base_minutes * 1.20)),
+                maximum_minutes=max(1, ceil(base_minutes * uncertainty_multiplier)),
             ),
             geometry=segment.geometry,
             instructions=f"Drive from {segment.origin_name} to {segment.destination_name}.",

@@ -1,9 +1,12 @@
 import pytest
+from pydantic import SecretStr
 
 from app.core.config import Settings
 from app.data.places import SupabasePlaceRepository, UnavailablePlaceRepository
 from app.main import create_app
 from app.providers.google_routes import GoogleRoutesRailItineraryProvider
+from app.providers.railradar import RailRadarItineraryProvider
+from app.routing.google_routes import GoogleRoutesRoadRoutingProvider
 
 
 def test_deterministic_provider_is_forbidden_in_production() -> None:
@@ -35,14 +38,40 @@ def test_production_still_requires_server_credentials() -> None:
 
 def test_google_routes_provider_requires_server_api_key() -> None:
     with pytest.raises(RuntimeError, match="GOOGLE_ROUTES_API_KEY"):
-        create_app(settings=Settings(multimodal_provider="google_routes"))
+        create_app(
+            settings=Settings.model_construct(multimodal_provider="google_routes")
+        )
 
     app = create_app(
-        settings=Settings.model_validate(
-            {
-                "multimodal_provider": "google_routes",
-                "google_routes_api_key": "server-key",
-            }
+        settings=Settings.model_construct(
+            multimodal_provider="google_routes",
+            google_routes_api_key=SecretStr("server-key"),
         )
     )
     assert isinstance(app.state.rail_itinerary_provider, GoogleRoutesRailItineraryProvider)
+
+
+def test_google_routes_road_provider_requires_server_api_key() -> None:
+    with pytest.raises(RuntimeError, match="GOOGLE_ROUTES_API_KEY"):
+        create_app(settings=Settings.model_construct(road_routing_provider="google_routes"))
+
+    app = create_app(
+        settings=Settings.model_construct(
+            road_routing_provider="google_routes",
+            google_routes_api_key=SecretStr("server-key"),
+        )
+    )
+    assert isinstance(app.state.road_provider, GoogleRoutesRoadRoutingProvider)
+
+
+def test_railradar_provider_requires_server_api_key() -> None:
+    with pytest.raises(RuntimeError, match="RAILRADAR_API_KEY"):
+        create_app(settings=Settings.model_construct(multimodal_provider="railradar"))
+
+    app = create_app(
+        settings=Settings.model_construct(
+            multimodal_provider="railradar",
+            railradar_api_key=SecretStr("server-key"),
+        )
+    )
+    assert isinstance(app.state.rail_itinerary_provider, RailRadarItineraryProvider)

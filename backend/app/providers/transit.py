@@ -108,6 +108,7 @@ class ProviderTransitItinerary(BaseModel):
     distance_km: float | None = Field(default=None, gt=0)
     geometry: RouteGeometry | None = None
     fare: CostRange | None = None
+    fare_is_complete: bool = True
     source: ProviderSource
 
 

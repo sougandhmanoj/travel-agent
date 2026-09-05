@@ -8,6 +8,7 @@ from app.core.config import Settings, get_settings
 from app.data.places import PlaceRepository, SupabasePlaceRepository, UnavailablePlaceRepository
 from app.providers.google_routes import GoogleRoutesRailItineraryProvider
 from app.providers.osrm import OsrmLocalTransferProvider
+from app.providers.railradar import RailRadarItineraryProvider
 from app.providers.testing import deterministic_demo_providers
 from app.providers.transit import (
     AirServiceProvider,
@@ -20,6 +21,7 @@ from app.providers.transit import (
     UnavailableLocalTransferProvider,
     UnavailableRailServiceProvider,
 )
+from app.routing.google_routes import GoogleRoutesRoadRoutingProvider
 from app.routing.road import (
     OsrmRoadRoutingProvider,
     RoadRoutingProvider,
@@ -40,6 +42,7 @@ def create_app(
     fare_provider: FareEstimateProvider | None = None,
 ) -> FastAPI:
     active_settings = settings or get_settings()
+    use_configured_rail_itinerary = rail_itinerary_provider is None and rail_provider is None
     if place_repository is None:
         if active_settings.supabase_url is not None and (
             active_settings.supabase_service_role_key is not None
@@ -62,6 +65,17 @@ def create_app(
             road_provider = DeterministicRoadRoutingProvider()
         elif active_settings.road_routing_provider == "osrm":
             road_provider = OsrmRoadRoutingProvider(str(active_settings.osrm_base_url))
+        elif active_settings.road_routing_provider == "google_routes":
+            if active_settings.google_routes_api_key is None:
+                raise RuntimeError(
+                    "GOOGLE_ROUTES_API_KEY is required when "
+                    "ROAD_ROUTING_PROVIDER=google_routes"
+                )
+            road_provider = GoogleRoutesRoadRoutingProvider(
+                active_settings.google_routes_api_key.get_secret_value(),
+                str(active_settings.google_routes_base_url),
+                geometry_fallback=OsrmRoadRoutingProvider(str(active_settings.osrm_base_url)),
+            )
         else:
             road_provider = UnavailableRoadRoutingProvider()
     demo_rail: RailServiceProvider
@@ -77,7 +91,15 @@ def create_app(
         demo_air = UnavailableAirServiceProvider()
         demo_local = UnavailableLocalTransferProvider()
         demo_fares = UnavailableFareEstimateProvider()
-    if rail_itinerary_provider is None and active_settings.multimodal_provider == "google_routes":
+    rail_provider = rail_provider or demo_rail
+    air_provider = air_provider or demo_air
+    if local_provider is None:
+        local_provider = (
+            OsrmLocalTransferProvider(road_provider)
+            if active_settings.road_routing_provider in {"osrm", "google_routes"}
+            else demo_local
+        )
+    if use_configured_rail_itinerary and active_settings.multimodal_provider == "google_routes":
         if active_settings.google_routes_api_key is None:
             raise RuntimeError(
                 "GOOGLE_ROUTES_API_KEY is required when MULTIMODAL_PROVIDER=google_routes"
@@ -86,13 +108,16 @@ def create_app(
             active_settings.google_routes_api_key.get_secret_value(),
             str(active_settings.google_routes_base_url),
         )
-    rail_provider = rail_provider or demo_rail
-    air_provider = air_provider or demo_air
-    if local_provider is None:
-        local_provider = (
-            OsrmLocalTransferProvider(road_provider)
-            if active_settings.road_routing_provider == "osrm"
-            else demo_local
+    if use_configured_rail_itinerary and active_settings.multimodal_provider == "railradar":
+        if active_settings.railradar_api_key is None:
+            raise RuntimeError(
+                "RAILRADAR_API_KEY is required when MULTIMODAL_PROVIDER=railradar"
+            )
+        rail_itinerary_provider = RailRadarItineraryProvider(
+            active_settings.railradar_api_key.get_secret_value(),
+            place_repository,
+            local_provider,
+            str(active_settings.railradar_base_url),
         )
     fare_provider = fare_provider or demo_fares
 

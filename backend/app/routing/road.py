@@ -4,12 +4,13 @@ Providers must return observed/calculated route facts. The planning engine valid
 the response and never fills missing provider facts with invented route data.
 """
 
+from datetime import date
 from typing import Any, Protocol, cast
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.models import Coordinates, LegRole, NormalizedEndpoint, RouteGeometry
+from app.models import Coordinates, FreshnessStatus, LegRole, NormalizedEndpoint, RouteGeometry
 
 
 class RoadRouteRequest(BaseModel):
@@ -19,6 +20,7 @@ class RoadRouteRequest(BaseModel):
     destination: NormalizedEndpoint
     require_first_mile: bool
     require_last_mile: bool
+    travel_date: date | None = None
 
 
 class RoadRouteSegment(BaseModel):
@@ -40,6 +42,7 @@ class RoadRoute(BaseModel):
 
     provider_id: str = Field(min_length=1)
     provider_label: str = Field(min_length=1)
+    freshness: FreshnessStatus = FreshnessStatus.UNKNOWN
     segments: list[RoadRouteSegment] = Field(min_length=1)
 
 
@@ -115,6 +118,7 @@ class OsrmRoadRoutingProvider:
         return RoadRoute(
             provider_id="osrm",
             provider_label="OSRM road route using OpenStreetMap data",
+            freshness=FreshnessStatus.CURRENT,
             segments=[
                 RoadRouteSegment(
                     role=LegRole.MAIN,
